@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "ssdir"
+version = "0.1.0"
+description = "Single Shot Multi-Box Detect Infer & Repeat implementation in PyTorch"
+authors = ["Piotr Zieliński <piotrekzie100@gmail.com>"]
+packages = [
+    { include = "ssdir" }
+]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+pytest-cov = "^2.10.0"
+
+[tool.poetry.scripts]
+ssdir = "ssdir.cli:main"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
