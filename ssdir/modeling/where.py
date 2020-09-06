@@ -9,7 +9,7 @@ from ssd.modeling.box_predictors import SSDBoxPredictor
 
 
 class WhereEncoder(nn.Module):
-    """Module encoding input image to where latent params).
+    """Module encoding input image to where latent params.
 
     .. converts regressional location results into boxes (center_x center_y, w, h)
        $$hat{center} * center_variance = \frac {center - center_prior} {hw_prior}$$
