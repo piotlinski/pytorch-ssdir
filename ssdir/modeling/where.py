@@ -34,6 +34,10 @@ class WhereEncoder(nn.Module):
         self.size_variance = ssd_config.MODEL.SIZE_VARIANCE
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
+        """ Takes tuple of tensors (batch_size x grid x grid x features)
+        .. and outputs bounding box parameters x_center, y_center, w, h tensor
+        .. (batch_size x sum_features(grid*grid) x 4)
+        """
         where = []
         batch_size = features[0].shape[0]
         for feature, reg_header in zip(features, self.predictor.reg_headers):
@@ -70,7 +74,7 @@ class WhereTransformer(nn.Module):
         :return: sxy
         """
         s_where, _ = torch.max(where_boxes[..., 2:], dim=-1, keepdim=True)
-        xy_where = where_boxes[..., :2] - s_where / 2
+        xy_where = where_boxes[..., :2]
         return torch.cat(
             (s_where * self.image_size / self.decoded_size, xy_where * self.image_size),
             dim=-1,
@@ -84,22 +88,25 @@ class WhereTransformer(nn.Module):
         :return: transformation matrix for transposing and scaling
         """
         batch_size = sxy.shape[0]
+        n_boxes = sxy.shape[1]
         transformation_mtx = torch.cat(
-            (torch.zeros((1, 1)).expand(batch_size, 1), sxy), dim=1
+            (torch.zeros((batch_size, n_boxes, 1)), sxy), dim=2
         )
         return torch.index_select(
-            input=transformation_mtx, dim=1, index=[1, 0, 2, 0, 1, 3]
-        ).view(batch_size, 2, 3)
+            input=transformation_mtx, dim=2, index=torch.tensor([1, 0, 2, 0, 1, 3])
+        ).view(batch_size, n_boxes, 2, 3)
 
     def forward(
-        self, decoded_image: torch.Tensor, where_boxes: torch.Tensor
+        self, decoded_images: torch.Tensor, where_boxes: torch.Tensor
     ) -> torch.Tensor:
-        batch_size = decoded_image.shape[0]
-        channels = decoded_image.shape[1]
+        batch_size = decoded_images.shape[0]
+        channels = decoded_images.shape[1]
+        n_boxes = where_boxes.shape[1]
         sxy = self.convert_boxes_to_sxy(where_boxes=where_boxes)
-        theta = self.expand_where(sxy)
+        theta = self.expand_where(sxy).view(batch_size * n_boxes, -1)
         grid = functional.affine_grid(
-            theta=theta, size=(batch_size, channels, self.image_size, self.image_size)
+            theta=theta,
+            size=(batch_size * n_boxes, channels, self.image_size, self.image_size),
         )
-        transformed_image = functional.grid_sample(input=decoded_image, grid=grid)
+        transformed_image = functional.grid_sample(input=decoded_images, grid=grid)
         return transformed_image
