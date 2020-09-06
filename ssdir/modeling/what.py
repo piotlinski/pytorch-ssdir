@@ -10,6 +10,7 @@ class WhatEncoder(nn.Module):
     """Module encoding input image to what latent distribution params."""
 
     def __init__(self, z_what_size: int, feature_channels: List[int]):
+        super().__init__()
         self.h_size = z_what_size
         self.feature_channels = feature_channels
         self.mean_encoders = self._build_what_encoders()
@@ -31,38 +32,37 @@ class WhatEncoder(nn.Module):
 
     def forward(
         self, features: Tuple[torch.Tensor, ...]
-    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], ...]:
-        means_stds = []
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        means = []
+        stds = []
         batch_size = features[0].shape[0]
         for feature, mean_encoder, std_encoder in zip(
             features, self.mean_encoders, self.std_encoders
         ):
-            means = (
+            means.append(
                 mean_encoder(feature)
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, self.h_size)
             )
-            stds = (
+            stds.append(
                 functional.softplus(std_encoder(feature))
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, self.h_size)
             )
-            means_stds.append((means, stds))
-        return tuple(means_stds)
+
+        means = torch.cat(means, dim=1)
+        stds = torch.cat(stds, dim=1)
+
+        return means, stds
 
 
-class WhatDecoder(nn.Module):
+class WhatDecoder(nn.Sequential):
     """Module decoding latent what code to individual images."""
 
-    def __init__(self, z_what_size: int, output_sizes: Tuple[int, ...]):
+    def __init__(self, z_what_size: int):
         self.h_size = z_what_size
-        self.output_sizes = output_sizes
-        self.decoder = self._build_what_decoder()
-
-    def _build_what_decoder(self) -> nn.ModuleList:
-        """Build sequential for decoding latent to an image."""
         layers = [
             nn.ConvTranspose2d(self.h_size, 128, kernel_size=5, stride=2),
             nn.ReLU(),
@@ -73,10 +73,4 @@ class WhatDecoder(nn.Module):
             nn.ConvTranspose2d(32, 3, kernel_size=6, stride=2),
             nn.Sigmoid(),
         ]
-        return nn.Sequential(layers)
-
-    def forward(self, z_whats: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
-        decoded = []
-        for z_what in z_whats:
-            decoded.append(self.decoder(z_what))
-        return tuple(decoded)
+        super().__init__(*layers)
