@@ -83,7 +83,8 @@ class WhatDecoder(nn.Module):
     def forward(self, z_whats: torch.Tensor) -> torch.Tensor:
         """ Takes z_what latent (batch_size x sum_features(grid*grid) x z_what_size)
         .. and outputs decoded images
-        .. (batch_size x sum_features(grid*grid) x 3 x 64 x 64"""
+        .. (batch_size x sum_features(grid*grid) x 3 x 64 x 64)
+        """
         decoded_images = []
         for z_what in z_whats:
             decoded_images.append(self.decoder(z_what.view(-1, self.h_size, 1, 1)))
