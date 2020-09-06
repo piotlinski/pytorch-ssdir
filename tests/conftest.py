@@ -27,3 +27,14 @@ def ssd_features(ssd_config, ssd_model):
         )
     ]
     return tuple(features)
+
+
+@pytest.fixture
+def n_ssd_features(ssd_config):
+    """Total number of ssd features."""
+    return sum(
+        boxes * features ** 2
+        for features, boxes in zip(
+            ssd_config.DATA.PRIOR.FEATURE_MAPS, ssd_config.DATA.PRIOR.BOXES_PER_LOC
+        )
+    )
