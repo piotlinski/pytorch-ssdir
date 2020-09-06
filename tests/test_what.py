@@ -20,7 +20,7 @@ def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size, grid
     assert (
         means.shape
         == stds.shape
-        == (batch_size, len(feature_channels) * grid_size * grid_size, z_what_size)
+        == (batch_size, len(feature_channels) * grid_size ** 2, z_what_size)
     )
 
 
