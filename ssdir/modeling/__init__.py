@@ -6,8 +6,8 @@ from ssdir.modeling.where import WhereEncoder, WhereTransformer
 __all__ = [
     "DepthEncoder",
     "PresentEncoder",
-    "WhatEncoder",
     "WhatDecoder",
+    "WhatEncoder",
     "WhereEncoder",
     "WhereTransformer",
 ]
