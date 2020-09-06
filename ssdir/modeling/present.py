@@ -14,6 +14,9 @@ class PresentEncoder(nn.Module):
         self.predictor = ssd_box_predictor
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
+        """ Takes tuple of tensors (batch_size x grid x grid x features)
+        .. and outputs probabilities tensor (batch_size x sum_features(grid*grid) x 1)
+        """
         presents = []
         batch_size = features[0].shape[0]
         for feature, cls_header in zip(features, self.predictor.cls_headers):
@@ -23,7 +26,7 @@ class PresentEncoder(nn.Module):
                 .contiguous()
                 .view(batch_size, -1, self.predictor.config.DATA.N_CLASSES)
             )
-            max_values, max_indices = torch.max(logits, dim=-1)
+            max_values, max_indices = torch.max(logits, dim=-1, keepdim=True)
             present_indices = max_values > 0
             present = torch.zeros_like(max_values)
             present[present_indices] = max_values[present_indices]
