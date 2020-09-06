@@ -4,7 +4,9 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
+from ssd.config import CfgNode
 from ssd.data.bboxes import convert_locations_to_boxes
+from ssd.data.priors import process_prior
 from ssd.modeling.box_predictors import SSDBoxPredictor
 
 
@@ -12,22 +14,24 @@ class WhereEncoder(nn.Module):
     """Module encoding input image features to where latent params.
 
     .. converts regressional location results into boxes (center_x center_y, w, h)
-       $$hat{center} * center_variance = \frac {center - center_prior} {hw_prior}$$
-       $$exp(hat{hw} * size_variance) = \frac {hw} {hw_prior}$$
+       $$hat{center} * center_variance = \\frac {center - center_prior} {hw_prior}$$
+       $$exp(hat{hw} * size_variance) = \\frac {hw} {hw_prior}$$
     """
 
-    def __init__(
-        self,
-        ssd_box_predictor: SSDBoxPredictor,
-        ssd_anchors: torch.Tensor,
-        ssd_center_variance: float,
-        ssd_size_variance: float,
-    ):
+    def __init__(self, ssd_box_predictor: SSDBoxPredictor, ssd_config: CfgNode):
         super().__init__()
         self.predictor = ssd_box_predictor
-        self.anchors = ssd_anchors
-        self.center_variance = ssd_center_variance
-        self.size_variance = ssd_size_variance
+        self.anchors = process_prior(
+            image_size=ssd_config.DATA.SHAPE,
+            feature_maps=ssd_config.DATA.PRIOR.FEATURE_MAPS,
+            min_sizes=ssd_config.DATA.PRIOR.MIN_SIZES,
+            max_sizes=ssd_config.DATA.PRIOR.MAX_SIZES,
+            strides=ssd_config.DATA.PRIOR.STRIDES,
+            aspect_ratios=ssd_config.DATA.PRIOR.ASPECT_RATIOS,
+            clip=ssd_config.DATA.PRIOR.CLIP,
+        )
+        self.center_variance = ssd_config.MODEL.CENTER_VARIANCE
+        self.size_variance = ssd_config.MODEL.SIZE_VARIANCE
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
         where = []
