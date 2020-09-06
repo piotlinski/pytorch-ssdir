@@ -7,7 +7,7 @@ from ssd.modeling.box_predictors import SSDBoxPredictor
 
 
 class PresentEncoder(nn.Module):
-    """Module encoding input image to present latent param."""
+    """Module encoding input image features to present latent param."""
 
     def __init__(self, ssd_box_predictor: SSDBoxPredictor):
         super().__init__()

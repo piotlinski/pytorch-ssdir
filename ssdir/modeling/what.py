@@ -7,7 +7,7 @@ import torch.nn.functional as functional
 
 
 class WhatEncoder(nn.Module):
-    """Module encoding input image to what latent distribution params."""
+    """Module encoding input image features to what latent distribution params."""
 
     def __init__(self, z_what_size: int, feature_channels: List[int]):
         super().__init__()
