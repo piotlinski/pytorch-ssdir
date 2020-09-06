@@ -99,14 +99,26 @@ class WhereTransformer(nn.Module):
     def forward(
         self, decoded_images: torch.Tensor, where_boxes: torch.Tensor
     ) -> torch.Tensor:
+        """ Takes decoded images (batch_size x sum_features(grid*grid) x 3 x 64 x 64)
+        .. and bounding box parameters x_center, y_center, w, h tensor
+        .. (batch_size x sum_features(grid*grid) x 4)
+        .. and outputs transformed images
+        .. (batch_size x sum_features(grid*grid) x 3 x image_size x image_size)
+        """
         batch_size = decoded_images.shape[0]
-        channels = decoded_images.shape[1]
-        n_boxes = where_boxes.shape[1]
+        n_objects = decoded_images.shape[1]
+        channels = decoded_images.shape[2]
+        image_size = decoded_images.shape[3:]
         sxy = self.convert_boxes_to_sxy(where_boxes=where_boxes)
-        theta = self.expand_where(sxy).view(batch_size * n_boxes, -1)
+        theta = self.expand_where(sxy).view(batch_size * n_objects, 2, 3)
         grid = functional.affine_grid(
             theta=theta,
-            size=(batch_size * n_boxes, channels, self.image_size, self.image_size),
+            size=(batch_size * n_objects, channels, self.image_size, self.image_size),
         )
-        transformed_image = functional.grid_sample(input=decoded_images, grid=grid)
-        return transformed_image
+        transformed_images = functional.grid_sample(
+            input=decoded_images.view(batch_size * n_objects, channels, *image_size),
+            grid=grid,
+        )
+        return transformed_images.view(
+            batch_size, n_objects, channels, self.image_size, self.image_size
+        )
