@@ -17,7 +17,6 @@ def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size, grid
     ]
     encoder = WhatEncoder(z_what_size=z_what_size, feature_channels=feature_channels)
     means, stds = encoder(inputs)
-    print(means.shape)
     assert (
         means.shape
         == stds.shape
@@ -33,5 +32,4 @@ def test_what_decoder_dimensions(z_what_size, batch_size, n_objects):
     z_whats = torch.rand(batch_size, n_objects, z_what_size)
     decoder = WhatDecoder(z_what_size=z_what_size)
     outputs = decoder(z_whats)
-    print(outputs.shape)
     assert outputs.shape == (batch_size, n_objects, 3, 64, 64)
