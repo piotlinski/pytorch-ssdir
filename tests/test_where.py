@@ -12,6 +12,12 @@ def test_where_encoder_dimensions(ssd_config, ssd_model, ssd_features, n_ssd_fea
     assert outputs.shape == (ssd_features[0].shape[0], n_ssd_features, 4)
 
 
+def test_where_encoder_dtype(ssd_config, ssd_model, ssd_features):
+    encoder = WhereEncoder(ssd_box_predictor=ssd_model.predictor, ssd_config=ssd_config)
+    outputs = encoder(ssd_features)
+    assert outputs.dtype == torch.float
+
+
 @pytest.mark.parametrize("decoded_size", [2, 3])
 @pytest.mark.parametrize("image_size", [7, 8])
 @pytest.mark.parametrize("batch_size", [3, 4])
