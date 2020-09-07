@@ -5,15 +5,15 @@ import torch
 from ssdir.modeling.where import WhereEncoder, WhereTransformer
 
 
-def test_where_encoder_dimensions(ssd_config, ssd_model, ssd_features, n_ssd_features):
+def test_where_encoder_dimensions(ssd_model, ssd_features, n_ssd_features):
     """Verify WhereEncoder output dimensions."""
-    encoder = WhereEncoder(ssd_box_predictor=ssd_model.predictor, ssd_config=ssd_config)
+    encoder = WhereEncoder(ssd_box_predictor=ssd_model.predictor)
     outputs = encoder(ssd_features)
     assert outputs.shape == (ssd_features[0].shape[0], n_ssd_features, 4)
 
 
-def test_where_encoder_dtype(ssd_config, ssd_model, ssd_features):
-    encoder = WhereEncoder(ssd_box_predictor=ssd_model.predictor, ssd_config=ssd_config)
+def test_where_encoder_dtype(ssd_model, ssd_features):
+    encoder = WhereEncoder(ssd_box_predictor=ssd_model.predictor)
     outputs = encoder(ssd_features)
     assert outputs.dtype == torch.float
 

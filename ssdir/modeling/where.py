@@ -4,7 +4,6 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from ssd.config import CfgNode
 from ssd.data.bboxes import convert_locations_to_boxes
 from ssd.data.priors import process_prior
 from ssd.modeling.box_predictors import SSDBoxPredictor
@@ -18,20 +17,20 @@ class WhereEncoder(nn.Module):
        $$exp(hat{hw} * size_variance) = \\frac {hw} {hw_prior}$$
     """
 
-    def __init__(self, ssd_box_predictor: SSDBoxPredictor, ssd_config: CfgNode):
+    def __init__(self, ssd_box_predictor: SSDBoxPredictor):
         super().__init__()
         self.predictor = ssd_box_predictor
         self.anchors = process_prior(
-            image_size=ssd_config.DATA.SHAPE,
-            feature_maps=ssd_config.DATA.PRIOR.FEATURE_MAPS,
-            min_sizes=ssd_config.DATA.PRIOR.MIN_SIZES,
-            max_sizes=ssd_config.DATA.PRIOR.MAX_SIZES,
-            strides=ssd_config.DATA.PRIOR.STRIDES,
-            aspect_ratios=ssd_config.DATA.PRIOR.ASPECT_RATIOS,
-            clip=ssd_config.DATA.PRIOR.CLIP,
+            image_size=ssd_box_predictor.config.DATA.SHAPE,
+            feature_maps=ssd_box_predictor.config.DATA.PRIOR.FEATURE_MAPS,
+            min_sizes=ssd_box_predictor.config.DATA.PRIOR.MIN_SIZES,
+            max_sizes=ssd_box_predictor.config.DATA.PRIOR.MAX_SIZES,
+            strides=ssd_box_predictor.config.DATA.PRIOR.STRIDES,
+            aspect_ratios=ssd_box_predictor.config.DATA.PRIOR.ASPECT_RATIOS,
+            clip=ssd_box_predictor.config.DATA.PRIOR.CLIP,
         )
-        self.center_variance = ssd_config.MODEL.CENTER_VARIANCE
-        self.size_variance = ssd_config.MODEL.SIZE_VARIANCE
+        self.center_variance = ssd_box_predictor.config.MODEL.CENTER_VARIANCE
+        self.size_variance = ssd_box_predictor.config.MODEL.SIZE_VARIANCE
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
         """ Takes tuple of tensors (batch_size x grid x grid x features)
