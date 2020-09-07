@@ -24,6 +24,8 @@ jobs:
             poetry-${{ hashFiles('**/poetry.lock') }}
       - name: Set poetry config
         run: |
+          poetry config repositories.trasee https://pypi.trasee.io/simple/
+          poetry config http-basic.trasee github ${{ secrets.pypi_github }}
           poetry config virtualenvs.in-project true
           poetry config virtualenvs.path ~/.virtualenvs
       - name: Install dependencies
