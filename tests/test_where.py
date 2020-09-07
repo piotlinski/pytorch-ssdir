@@ -54,3 +54,18 @@ def test_convert_to_sxy(boxes, image_size, expected):
     transformer = WhereTransformer(image_size=image_size)
     sxy = transformer.convert_boxes_to_sxy(boxes)
     assert (sxy == expected).all()
+
+
+def test_expand_where():
+    """Verify expanding sxy to transformation matrix."""
+    sxy = torch.tensor(
+        [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[8.0, 7.0, 6.0], [5.0, 4.0, 3.0]]]
+    )
+    expected = torch.tensor(
+        [
+            [[[1.0, 0.0, 2.0], [0.0, 1.0, 3.0]], [[4.0, 0.0, 5.0], [0.0, 4.0, 6.0]]],
+            [[[8.0, 0.0, 7.0], [0.0, 8.0, 6.0]], [[5.0, 0.0, 4.0], [0.0, 5.0, 3.0]]],
+        ]
+    )
+    transformation_mtx = WhereTransformer.expand_where(sxy)
+    assert (transformation_mtx == expected).all()
