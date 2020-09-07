@@ -21,3 +21,13 @@ def test_depth_encoder_dimensions(feature_channels, batch_size, grid_size):
         == stds.shape
         == (batch_size, len(feature_channels) * grid_size ** 2, 1)
     )
+
+
+def test_depth_encoder_dtype():
+    """Verify DepthEncoder output types."""
+    inputs = [torch.rand(3, 4, 5, 5)]
+    encoder = DepthEncoder(feature_channels=[4])
+    means, stds = encoder(inputs)
+    assert means.dtype == torch.float
+    assert stds.dtype == torch.float
+    assert (stds > 0).all()
