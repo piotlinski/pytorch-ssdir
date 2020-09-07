@@ -3,7 +3,8 @@ from typing import Tuple, Union
 
 import torch
 import torch.nn as nn
-from ssd.modeling.model import SSD, CfgNode
+from ssd.config import CfgNode, get_config
+from ssd.modeling.model import SSD, CheckPointer
 
 from ssdir.modeling import (
     DepthEncoder,
@@ -144,3 +145,23 @@ class Decoder(nn.Module):
         return self._render(
             z_what=sorted_z_what, z_where=sorted_z_where, z_present=sorted_z_present
         )
+
+
+class SSDIR(nn.Module):
+    """Single-Shot Detect, Infer, Repeat."""
+
+    def __init__(
+        self,
+        z_what_size: int = 64,
+        ssd_config_file: str = "assets/pretrained/ssd_mnist/config.yml",
+        ssd_model_file: str = "vgg300_singleclass.pth",
+    ):
+        super().__init__()
+
+        ssd_config = get_config(config_file=ssd_config_file)
+        ssd_model = SSD(config=ssd_config)
+        ssd_checkpointer = CheckPointer(config=ssd_config, model=ssd_model)
+        ssd_checkpointer.load(filename=ssd_model_file)
+
+        self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
+        self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size)

@@ -1,3 +1,3 @@
-from ssdir.modeling.models import Decoder, Encoder
+from ssdir.modeling.models import SSDIR, Decoder, Encoder
 
-__all__ = ["Decoder", "Encoder"]
+__all__ = ["Decoder", "Encoder", "SSDIR"]
