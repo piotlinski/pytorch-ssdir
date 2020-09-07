@@ -3,9 +3,16 @@ from typing import Tuple, Union
 
 import torch
 import torch.nn as nn
-from ssd.modeling.model import SSD
+from ssd.modeling.model import SSD, CfgNode
 
-from ssdir.modeling import DepthEncoder, PresentEncoder, WhatEncoder, WhereEncoder
+from ssdir.modeling import (
+    DepthEncoder,
+    PresentEncoder,
+    WhatDecoder,
+    WhatEncoder,
+    WhereEncoder,
+    WhereTransformer,
+)
 
 
 class Encoder(nn.Module):
@@ -46,3 +53,43 @@ class Encoder(nn.Module):
             z_present,
             (z_depth_mean, z_depth_std),
         )
+
+
+class Decoder(nn.Module):
+    """ Module decoding latent representation.
+
+    .. Pipeline:
+       - sort z_depth ascending
+       - sort $$z_{what}$$, $$z_{where}$$, $$z_{present}$$ accordingly
+       - decode $$z_{what}$$ where $$z_{present} = 1$$
+       - transform decoded objects according to $$z_{where}$$
+       - merge transformed images based on $$z_{depth}$$
+    """
+
+    def __init__(self, ssd: SSD, z_what_size: int = 64):
+        super().__init__()
+        ssd_config = ssd.predictor.config
+        self.what_dec = WhatDecoder(z_what_size=z_what_size)
+        self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
+        self.indices = self.reconstruction_indices(ssd_config)
+
+    @staticmethod
+    def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
+        """Get indices for reconstructing images.
+
+        .. Caters for the difference between z_what, z_depth and z_where, z_present.
+        """
+        indices = []
+        img_idx = last_img_idx = 0
+        for feature_map, boxes_per_loc in zip(
+            ssd_config.DATA.PRIOR.FEATURE_MAPS, ssd_config.DATA.PRIOR.BOXES_PER_LOC
+        ):
+            for feature_map_idx in range(feature_map ** 2):
+                img_idx = last_img_idx + feature_map_idx
+                indices.append(
+                    torch.full(
+                        size=(boxes_per_loc,), fill_value=img_idx, dtype=torch.long,
+                    )
+                )
+            last_img_idx = img_idx + 1
+        return torch.cat(indices, dim=0)

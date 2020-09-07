@@ -2,7 +2,7 @@
 import pytest
 import torch
 
-from ssdir.modeling.models import Encoder
+from ssdir.modeling.models import Decoder, Encoder
 
 
 @pytest.mark.parametrize("z_what_size", [2, 4])
@@ -24,3 +24,13 @@ def test_encoder_dimensions(
     assert z_where.shape == (batch_size, n_ssd_features, 4)
     assert z_present.shape == (batch_size, n_ssd_features, 1)
     assert z_depth_mean.shape == z_depth_std.shape == (batch_size, n_objects, 1)
+
+
+def test_reconstruction_indices(ssd_config, n_ssd_features):
+    """Verify reconstruction indices calculation."""
+    indices = Decoder.reconstruction_indices(ssd_config)
+    assert indices.shape == (n_ssd_features,)
+    assert indices.unique().numel() == sum(
+        features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS
+    )
+    assert (torch.sort(indices)[0] == indices).all()
