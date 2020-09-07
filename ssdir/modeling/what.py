@@ -80,13 +80,8 @@ class WhatDecoder(nn.Module):
         ]
         self.decoder = nn.Sequential(*layers)
 
-    def forward(self, z_whats: torch.Tensor) -> torch.Tensor:
-        """ Takes z_what latent (batch_size x sum_features(grid*grid) x z_what_size)
-        .. and outputs decoded images
-        .. (batch_size x sum_features(grid*grid) x 3 x 64 x 64)
+    def forward(self, z_what: torch.Tensor) -> torch.Tensor:
+        """ Takes z_what latent (sum_features(grid*grid) x z_what_size)
+        .. and outputs decoded image (sum_features(grid*grid) x 3 x 64 x 64)
         """
-        decoded_images = []
-        for z_what in z_whats:
-            decoded_images.append(self.decoder(z_what.view(-1, self.h_size, 1, 1)))
-
-        return torch.stack(decoded_images, dim=0)
+        return self.decoder(z_what.view(-1, self.h_size, 1, 1))

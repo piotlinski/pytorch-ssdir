@@ -66,12 +66,13 @@ class Decoder(nn.Module):
        - merge transformed images based on $$z_{depth}$$
     """
 
-    def __init__(self, ssd: SSD, z_what_size: int = 64):
+    def __init__(self, ssd: SSD, z_what_size: int = 64, max_objects: int = 10):
         super().__init__()
         ssd_config = ssd.predictor.config
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
         self.indices = self.reconstruction_indices(ssd_config)
+        self.max_objects = max_objects
 
     @staticmethod
     def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
@@ -93,3 +94,54 @@ class Decoder(nn.Module):
                 )
             last_img_idx = img_idx + 1
         return torch.cat(indices, dim=0)
+
+    def _merge_images(self, images: torch.Tensor) -> torch.Tensor:
+        """Combine decoded images into one."""
+        combined = torch.zeros(3, self.where_stn.image_size, self.where_stn.image_size)
+        for image in images:
+            combined_zero = combined == 0.0
+            image_nonzero = image != 0.0
+            mask = combined_zero & image_nonzero
+            combined[mask] = image[mask]
+        return combined
+
+    def _render(
+        self, z_what: torch.Tensor, z_where: torch.Tensor, z_present: torch.Tensor
+    ) -> torch.Tensor:
+        """Render single image from batch."""
+        images = []
+        for what, where, present in zip(z_what, z_where, z_present):
+            present_mask = present == 1
+            what_size = what.shape[-1]
+            where_size = where.shape[-1]
+            what = what[present_mask.expand_as(what)].view(-1, what_size)
+            where = where[present_mask.expand_as(where)].view(-1, where_size)
+            decoded_images = self.what_dec(what)
+            transformed_images = self.where_stn(decoded_images, where)
+            images.append(self._merge_images(transformed_images))
+        return torch.stack(images, dim=0)
+
+    def forward(
+        self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> torch.Tensor:
+        """ Takes latent variables tensors tuple (z_what, z_where, z_present, z_depth)
+        .. and outputs reconstructed images batch
+        .. (batch_size x channels x image_size x image_size)
+        """
+        z_what, z_where, z_present, z_depth = latents
+        # repeat rows to match z_where and z_present
+        z_what = torch.index_select(input=z_what, dim=1, index=self.indices)
+        z_depth = torch.index_select(input=z_depth, dim=1, index=self.indices)
+        _, sort_index = torch.sort(z_depth, dim=1, descending=True)
+        sorted_z_what = z_what.gather(dim=1, index=sort_index.expand_as(z_what))[
+            :, : self.max_objects, ...
+        ]
+        sorted_z_where = z_where.gather(dim=1, index=sort_index.expand_as(z_where))[
+            :, : self.max_objects, ...
+        ]
+        sorted_z_present = z_present.gather(
+            dim=1, index=sort_index.expand_as(z_present)
+        )[:, : self.max_objects, ...]
+        return self._render(
+            z_what=sorted_z_what, z_where=sorted_z_where, z_present=sorted_z_present
+        )

@@ -20,17 +20,14 @@ def test_where_encoder_dtype(ssd_model, ssd_features):
 
 @pytest.mark.parametrize("decoded_size", [2, 3])
 @pytest.mark.parametrize("image_size", [7, 8])
-@pytest.mark.parametrize("batch_size", [3, 4])
 @pytest.mark.parametrize("hidden_size", [5, 6])
-def test_where_transformer_dimensions(
-    decoded_size, image_size, batch_size, hidden_size
-):
+def test_where_transformer_dimensions(decoded_size, image_size, hidden_size):
     """Verify WhereTransformer output dimensions."""
-    decoded_images = torch.rand(batch_size, hidden_size, 3, decoded_size, decoded_size)
-    z_where = torch.rand(batch_size, hidden_size, 4)
+    decoded_images = torch.rand(hidden_size, 3, decoded_size, decoded_size)
+    z_where = torch.rand(hidden_size, 4)
     transformer = WhereTransformer(image_size=image_size)
     outputs = transformer(decoded_images, z_where)
-    assert outputs.shape == (batch_size, hidden_size, 3, image_size, image_size)
+    assert outputs.shape == (hidden_size, 3, image_size, image_size)
 
 
 @pytest.mark.parametrize(
@@ -58,14 +55,9 @@ def test_convert_to_sxy(boxes, image_size, expected):
 
 def test_expand_where():
     """Verify expanding sxy to transformation matrix."""
-    sxy = torch.tensor(
-        [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[8.0, 7.0, 6.0], [5.0, 4.0, 3.0]]]
-    )
+    sxy = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     expected = torch.tensor(
-        [
-            [[[1.0, 0.0, 2.0], [0.0, 1.0, 3.0]], [[4.0, 0.0, 5.0], [0.0, 4.0, 6.0]]],
-            [[[8.0, 0.0, 7.0], [0.0, 8.0, 6.0]], [[5.0, 0.0, 4.0], [0.0, 5.0, 3.0]]],
-        ]
+        [[[1.0, 0.0, 2.0], [0.0, 1.0, 3.0]], [[4.0, 0.0, 5.0], [0.0, 4.0, 6.0]]]
     )
     transformation_mtx = WhereTransformer.expand_where(sxy)
     assert (transformation_mtx == expected).all()
