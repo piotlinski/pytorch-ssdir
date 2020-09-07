@@ -1,10 +1,12 @@
 """SSDIR encoder, decoder, model and guide declarations."""
 from typing import Tuple, Union
 
+import pyro.distributions as dist
 import torch
 import torch.nn as nn
 from ssd.config import CfgNode, get_config
-from ssd.modeling.model import SSD, CheckPointer
+from ssd.modeling.checkpoint import CheckPointer
+from ssd.modeling.model import SSD
 
 from ssdir.modeling import (
     DepthEncoder,
@@ -165,3 +167,21 @@ class SSDIR(nn.Module):
 
         self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
         self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size)
+
+    def encoder_forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        """Perform forward pass through encoder network."""
+        (
+            (z_what_mean, z_what_std),
+            z_where,
+            z_present,
+            (z_depth_mean, z_depth_std),
+        ) = self.encoder(inputs)
+        z_what = dist.Normal(z_what_mean, z_what_std).sample()
+        z_present = dist.Bernoulli(z_present).sample().long()
+        z_depth = dist.Normal(z_depth_mean, z_depth_std).sample()
+        return z_what, z_where, z_present, z_depth
+
+    def decoder_forward(self, latents: Tuple[torch.Tensor, ...]) -> torch.Tensor:
+        """Perform forward pass through decoder network."""
+        outputs = self.decoder(latents)
+        return outputs
