@@ -15,7 +15,8 @@ class PresentEncoder(nn.Module):
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         """ Takes tuple of tensors (batch_size x grid x grid x features)
-        .. and outputs probabilities tensor (batch_size x sum_features(grid*grid) x 1)
+        .. and outputs probabilities tensor
+        .. (batch_size x sum_features(grid*grid*n_boxes) x 1)
         """
         presents = []
         batch_size = features[0].shape[0]

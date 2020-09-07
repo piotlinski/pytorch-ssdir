@@ -35,7 +35,7 @@ class WhereEncoder(nn.Module):
     def forward(self, features: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
         """ Takes tuple of tensors (batch_size x grid x grid x features)
         .. and outputs bounding box parameters x_center, y_center, w, h tensor
-        .. (batch_size x sum_features(grid*grid) x 4)
+        .. (batch_size x sum_features(grid*grid*n_boxes) x 4)
         """
         where = []
         batch_size = features[0].shape[0]
@@ -100,9 +100,9 @@ class WhereTransformer(nn.Module):
     ) -> torch.Tensor:
         """ Takes decoded images (batch_size x sum_features(grid*grid) x 3 x 64 x 64)
         .. and bounding box parameters x_center, y_center, w, h tensor
-        .. (batch_size x sum_features(grid*grid) x 4)
+        .. (batch_size x sum_features(grid*grid*n_boxes) x 4)
         .. and outputs transformed images
-        .. (batch_size x sum_features(grid*grid) x 3 x image_size x image_size)
+        .. (batch_size x sum_features(grid*grid*n_boxes) x 3 x image_size x image_size)
         """
         batch_size = decoded_images.shape[0]
         n_objects = decoded_images.shape[1]
