@@ -36,17 +36,16 @@ def test_reconstruction_indices(ssd_config, n_ssd_features):
     assert (torch.sort(indices)[0] == indices).all()
 
 
-@pytest.mark.parametrize("max_objects", [5, 10, 15])
-def test_decoder_dimensions(max_objects, ssd_model, ssd_config, n_ssd_features):
+@pytest.mark.parametrize("batch_size", [2, 4, 8])
+def test_decoder_dimensions(batch_size, ssd_model, ssd_config, n_ssd_features):
     """Verify decoder output dimensions."""
-    batch_size = 2
     n_objects = sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS)
     z_what_size = 3
     z_what = torch.rand(batch_size, n_objects, z_what_size)
     z_where = torch.rand(batch_size, n_ssd_features, 4)
-    z_present = torch.ones((batch_size, n_ssd_features, 1))
+    z_present = torch.randint(0, 100, (batch_size, n_ssd_features, 1))
     z_depth = torch.rand(batch_size, n_objects, 1)
     inputs = (z_what, z_where, z_present, z_depth)
-    decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size, max_objects=max_objects)
+    decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size)
     outputs = decoder(inputs)
     assert outputs.shape == (batch_size, 3, *ssd_config.DATA.SHAPE)

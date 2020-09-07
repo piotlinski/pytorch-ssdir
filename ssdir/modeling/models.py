@@ -66,13 +66,12 @@ class Decoder(nn.Module):
        - merge transformed images based on $$z_{depth}$$
     """
 
-    def __init__(self, ssd: SSD, z_what_size: int = 64, max_objects: int = 10):
+    def __init__(self, ssd: SSD, z_what_size: int = 64):
         super().__init__()
         ssd_config = ssd.predictor.config
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
         self.indices = self.reconstruction_indices(ssd_config)
-        self.max_objects = max_objects
 
     @staticmethod
     def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
@@ -109,16 +108,20 @@ class Decoder(nn.Module):
         self, z_what: torch.Tensor, z_where: torch.Tensor, z_present: torch.Tensor
     ) -> torch.Tensor:
         """Render single image from batch."""
+        present_mask = z_present == 1
+        n_present = torch.sum(present_mask, dim=1).squeeze()
+        z_what_size = z_what.shape[-1]
+        z_where_size = z_where.shape[-1]
+        z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_size)
+        z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where_size)
+        decoded_images = self.what_dec(z_what)
+        transformed_images = self.where_stn(decoded_images, z_where)
+        starts_ends = torch.cumsum(
+            torch.cat((torch.zeros(1, dtype=torch.long), n_present)), dim=0
+        )
         images = []
-        for what, where, present in zip(z_what, z_where, z_present):
-            present_mask = present == 1
-            what_size = what.shape[-1]
-            where_size = where.shape[-1]
-            what = what[present_mask.expand_as(what)].view(-1, what_size)
-            where = where[present_mask.expand_as(where)].view(-1, where_size)
-            decoded_images = self.what_dec(what)
-            transformed_images = self.where_stn(decoded_images, where)
-            images.append(self._merge_images(transformed_images))
+        for start_idx, end_idx in zip(starts_ends, starts_ends[1:]):
+            images.append(self._merge_images(transformed_images[start_idx:end_idx]))
         return torch.stack(images, dim=0)
 
     def forward(
@@ -133,15 +136,11 @@ class Decoder(nn.Module):
         z_what = torch.index_select(input=z_what, dim=1, index=self.indices)
         z_depth = torch.index_select(input=z_depth, dim=1, index=self.indices)
         _, sort_index = torch.sort(z_depth, dim=1, descending=True)
-        sorted_z_what = z_what.gather(dim=1, index=sort_index.expand_as(z_what))[
-            :, : self.max_objects, ...
-        ]
-        sorted_z_where = z_where.gather(dim=1, index=sort_index.expand_as(z_where))[
-            :, : self.max_objects, ...
-        ]
+        sorted_z_what = z_what.gather(dim=1, index=sort_index.expand_as(z_what))
+        sorted_z_where = z_where.gather(dim=1, index=sort_index.expand_as(z_where))
         sorted_z_present = z_present.gather(
             dim=1, index=sort_index.expand_as(z_present)
-        )[:, : self.max_objects, ...]
+        )
         return self._render(
             z_what=sorted_z_what, z_where=sorted_z_where, z_present=sorted_z_present
         )
