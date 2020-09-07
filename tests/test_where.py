@@ -31,3 +31,26 @@ def test_where_transformer_dimensions(
     transformer = WhereTransformer(image_size=image_size)
     outputs = transformer(decoded_images, z_where)
     assert outputs.shape == (batch_size, hidden_size, 3, image_size, image_size)
+
+
+@pytest.mark.parametrize(
+    "boxes, image_size, expected",
+    [
+        (torch.tensor([1.0, 2.0, 3.0, 4.0]), 32, torch.tensor([2.0, 32.0, 64.0])),
+        (
+            torch.tensor([[10.0, 12.0, 8.0, 6.0], [6.0, 4.0, 2.0, 5.0]]),
+            128,
+            torch.tensor([[16.0, 1280.0, 1536.0], [10.0, 768.0, 512.0]]),
+        ),
+        (
+            torch.tensor([[[0.5, 0.2, 0.4, 0.3]]]),
+            128,
+            torch.tensor([[[0.8, 64, 25.6]]]),
+        ),
+    ],
+)
+def test_convert_to_sxy(boxes, image_size, expected):
+    """Verify converting xywh boxes to sxy."""
+    transformer = WhereTransformer(image_size=image_size)
+    sxy = transformer.convert_boxes_to_sxy(boxes)
+    assert (sxy == expected).all()
