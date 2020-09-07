@@ -21,7 +21,7 @@ class PresentEncoder(nn.Module):
         batch_size = features[0].shape[0]
         for feature, cls_header in zip(features, self.predictor.cls_headers):
             logits = (
-                cls_header(feature)
+                torch.sigmoid(cls_header(feature))
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, self.predictor.config.DATA.N_CLASSES)
