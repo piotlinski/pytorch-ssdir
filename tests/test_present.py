@@ -15,7 +15,6 @@ def test_present_encoder_dtype(ssd_model, ssd_features, n_ssd_features):
     """Verify PresentEncoder output types."""
     encoder = PresentEncoder(ssd_box_predictor=ssd_model.predictor)
     outputs = encoder(ssd_features)
-    print(torch.max(outputs), torch.min(outputs))
     assert outputs.dtype == torch.float
     assert (outputs >= 0).all()
     assert (outputs <= 1).all()
