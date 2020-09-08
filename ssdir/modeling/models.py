@@ -118,7 +118,7 @@ class Decoder(nn.Module):
     ) -> torch.Tensor:
         """Render single image from batch."""
         present_mask = z_present == 1
-        n_present = torch.sum(present_mask, dim=1).squeeze()
+        n_present = torch.sum(present_mask, dim=1).squeeze(-1)
         z_what_size = z_what.shape[-1]
         z_where_size = z_where.shape[-1]
         z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_size)
