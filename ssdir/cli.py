@@ -4,9 +4,11 @@ import logging
 import click
 import numpy as np
 import pyro.optim as optim
+import torch
 from pyro.infer import SVI, Trace_ELBO
 from pyssd.config import get_config
 from pyssd.data.loaders import TrainDataLoader
+from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm, trange
 
 from ssdir import SSDIR
@@ -35,6 +37,15 @@ def main(ctx: click.Context):
     help="ssd config to be used",
     type=str,
 )
+@click.option(
+    "--tb-dir",
+    default="assets/runs/latest",
+    help="folder for storing TB output",
+    type=str,
+)
+@click.option(
+    "--logging-step", default=10, help="number of steps between logging", type=int
+)
 @click.pass_obj
 def train(
     obj,
@@ -44,10 +55,15 @@ def train(
     z_what_size: int,
     device: str,
     ssd_config_file: str,
+    tb_dir: str,
+    logging_step: int,
 ):
     """Train the model."""
     epoch_loss = float("nan")
-    loss = float("nan")
+    logging_loss = float("nan")
+    logging_losses = []
+
+    tb_writer = SummaryWriter(log_dir=tb_dir)
 
     ssd_config = get_config(config_file=ssd_config_file)
     ssd_config.defrost()
@@ -66,6 +82,8 @@ def train(
     loss_fn = Trace_ELBO()
     svi = SVI(model=model.model, guide=model.guide, optim=optimizer, loss=loss_fn)
 
+    add_graph(model=model, tb_dir=tb_dir, device=device)
+
     with trange(
         n_epochs,
         desc="TRAINING",
@@ -78,17 +96,47 @@ def train(
 
             with tqdm(
                 train_loader,
-                desc=f"epoch {epoch:4d}",
+                desc=f"  epoch {epoch:4d}",
                 unit="step",
-                postfix=dict(loss=loss),
+                postfix=dict(loss=logging_loss),
             ) as step_pbar:
                 for images, _, _ in step_pbar:
                     images = images.to(device)
-                    global_step += 1
                     loss = svi.step(images)
 
                     epoch_losses.append(loss)
-                    epoch_loss = np.average(epoch_losses)
+                    logging_losses.append(loss)
 
-                    epoch_pbar.set_postfix(step=global_step, loss=epoch_loss)
-                    step_pbar.set_postfix(loss=loss)
+                    if global_step % logging_step == 0:
+                        epoch_loss = np.average(epoch_losses)
+                        logging_loss = np.average(logging_losses)
+                        logging_losses = []
+
+                        tb_writer.add_scalar(
+                            tag="elbo/train",
+                            scalar_value=logging_loss,
+                            global_step=global_step,
+                        )
+
+                        epoch_pbar.set_postfix(step=global_step, loss=epoch_loss)
+                        step_pbar.set_postfix(loss=loss)
+
+                    global_step += 1
+
+
+def add_graph(model: SSDIR, tb_dir: str, device: str = "cpu"):
+    """Write encoder and decoder graphs to TB."""
+    SummaryWriter(log_dir=f"{tb_dir}_encoder").add_graph(
+        model.encoder, torch.zeros((1, 3, 300, 300), device=device)
+    )
+    SummaryWriter(log_dir=f"{tb_dir}_decoder").add_graph(
+        model.decoder,
+        (
+            (
+                torch.zeros((1, model.n_objects, model.z_what_size), device=device),
+                torch.zeros((1, model.n_ssd_features, 4), device=device),
+                torch.ones((1, model.n_ssd_features, 1), device=device),
+                torch.ones((1, model.n_objects, 1), device=device),
+            ),
+        ),
+    )
