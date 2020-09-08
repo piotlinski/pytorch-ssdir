@@ -1,4 +1,5 @@
 """$$z_{where}$$ encoder and decoder."""
+import warnings
 from typing import Tuple
 
 import torch
@@ -105,8 +106,16 @@ class WhereTransformer(nn.Module):
         channels = decoded_images.shape[1]
         sxy = self.convert_boxes_to_sxy(where_boxes=where_boxes)
         theta = self.expand_where(sxy)
-        grid = functional.affine_grid(
-            theta=theta, size=(n_objects, channels, self.image_size, self.image_size),
-        )
-        transformed_images = functional.grid_sample(input=decoded_images, grid=grid,)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Default grid_sample and affine_grid behavior has changed ",
+            )
+            grid = functional.affine_grid(
+                theta=theta,
+                size=(n_objects, channels, self.image_size, self.image_size),
+            )
+            transformed_images = functional.grid_sample(
+                input=decoded_images, grid=grid,
+            )
         return transformed_images
