@@ -16,10 +16,10 @@ def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size, grid
         for feature_channel in feature_channels
     ]
     encoder = WhatEncoder(z_what_size=z_what_size, feature_channels=feature_channels)
-    means, stds = encoder(inputs)
+    locs, scales = encoder(inputs)
     assert (
-        means.shape
-        == stds.shape
+        locs.shape
+        == scales.shape
         == (batch_size, len(feature_channels) * grid_size ** 2, z_what_size)
     )
 
@@ -28,10 +28,10 @@ def test_what_encoder_dtype():
     """Verify what encoder output dtype."""
     inputs = [torch.rand(3, 4, 5, 5)]
     encoder = WhatEncoder(z_what_size=7, feature_channels=[4])
-    means, stds = encoder(inputs)
-    assert means.dtype == torch.float
-    assert stds.dtype == torch.float
-    assert (stds > 0).all()
+    locs, scales = encoder(inputs)
+    assert locs.dtype == torch.float
+    assert scales.dtype == torch.float
+    assert (scales > 0).all()
 
 
 @pytest.mark.parametrize("z_what_size", [2, 4, 5])

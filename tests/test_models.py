@@ -16,16 +16,18 @@ def test_encoder_dimensions(
     inputs = torch.rand(batch_size, 3, 300, 300)
     encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
     (
-        (z_what_mean, z_what_std),
+        (z_what_loc, z_what_scale),
         z_where,
         z_present,
-        (z_depth_mean, z_depth_std),
+        (z_depth_loc, z_depth_scale),
     ) = encoder(inputs)
     n_objects = sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS)
-    assert z_what_mean.shape == z_what_std.shape == (batch_size, n_objects, z_what_size)
+    assert (
+        z_what_loc.shape == z_what_scale.shape == (batch_size, n_objects, z_what_size)
+    )
     assert z_where.shape == (batch_size, n_ssd_features, 4)
     assert z_present.shape == (batch_size, n_ssd_features, 1)
-    assert z_depth_mean.shape == z_depth_std.shape == (batch_size, n_objects, 1)
+    assert z_depth_loc.shape == z_depth_scale.shape == (batch_size, n_objects, 1)
 
 
 def test_reconstruction_indices(ssd_config, n_ssd_features):

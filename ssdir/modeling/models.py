@@ -1,6 +1,7 @@
 """SSDIR encoder, decoder, model and guide declarations."""
 from typing import Tuple, Union
 
+import pyro
 import pyro.distributions as dist
 import torch
 import torch.nn as nn
@@ -16,6 +17,9 @@ from ssdir.modeling import (
     WhereEncoder,
     WhereTransformer,
 )
+
+pyro.enable_validation()
+pyro.set_rng_seed(0)
 
 
 class Encoder(nn.Module):
@@ -43,18 +47,18 @@ class Encoder(nn.Module):
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor, ...]], ...]:
         """ Takes images tensors (batch_size x channels x image_size x image_size)
         .. and outputs latent representation tuple
-        .. (z_what (mean & std), z_where, z_present, z_depth (mean & std))
+        .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
         """
         features = self.ssd.backbone(images)
-        z_what_mean, z_what_std = self.what_enc(features)
+        z_what_loc, z_what_scale = self.what_enc(features)
         z_where = self.where_enc(features)
         z_present = self.present_enc(features)
-        z_depth_mean, z_depth_std = self.depth_enc(features)
+        z_depth_loc, z_depth_scale = self.depth_enc(features)
         return (
-            (z_what_mean, z_what_std),
+            (z_what_loc, z_what_scale),
             z_where,
             z_present,
-            (z_depth_mean, z_depth_std),
+            (z_depth_loc, z_depth_scale),
         )
 
 
@@ -171,14 +175,14 @@ class SSDIR(nn.Module):
     def encoder_forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """Perform forward pass through encoder network."""
         (
-            (z_what_mean, z_what_std),
+            (z_what_loc, z_what_scale),
             z_where,
             z_present,
-            (z_depth_mean, z_depth_std),
+            (z_depth_loc, z_depth_scale),
         ) = self.encoder(inputs)
-        z_what = dist.Normal(z_what_mean, z_what_std).sample()
+        z_what = dist.Normal(z_what_loc, z_what_scale).sample()
         z_present = dist.Bernoulli(z_present).sample().long()
-        z_depth = dist.Normal(z_depth_mean, z_depth_std).sample()
+        z_depth = dist.Normal(z_depth_loc, z_depth_scale).sample()
         return z_what, z_where, z_present, z_depth
 
     def decoder_forward(self, latents: Tuple[torch.Tensor, ...]) -> torch.Tensor:

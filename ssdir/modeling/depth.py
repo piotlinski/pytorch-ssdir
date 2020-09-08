@@ -12,8 +12,8 @@ class DepthEncoder(nn.Module):
     def __init__(self, feature_channels: List[int]):
         super().__init__()
         self.feature_channels = feature_channels
-        self.mean_encoders = self._build_depth_encoders()
-        self.std_encoders = self._build_depth_encoders()
+        self.loc_encoders = self._build_depth_encoders()
+        self.scale_encoders = self._build_depth_encoders()
 
     def _build_depth_encoders(self) -> nn.ModuleList:
         """Build conv layers list for encoding backbone output."""
@@ -33,29 +33,29 @@ class DepthEncoder(nn.Module):
         self, features: Tuple[torch.Tensor, ...]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """ Takes tuple of tensors (batch_size x grid x grid x features)
-        .. and outputs mean and std tensors
+        .. and outputs loc and scale tensors
         .. (batch_size x sum_features(grid*grid) x 1)
         """
-        means = []
-        stds = []
+        locs = []
+        scales = []
         batch_size = features[0].shape[0]
-        for feature, mean_encoder, std_encoder in zip(
-            features, self.mean_encoders, self.std_encoders
+        for feature, loc_encoder, scale_encoder in zip(
+            features, self.loc_encoders, self.scale_encoders
         ):
-            means.append(
-                mean_encoder(feature)
+            locs.append(
+                loc_encoder(feature)
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, 1)
             )
-            stds.append(
-                functional.softplus(std_encoder(feature))
+            scales.append(
+                functional.softplus(scale_encoder(feature))
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, 1)
             )
 
-        means = torch.cat(means, dim=1)
-        stds = torch.cat(stds, dim=1)
+        locs = torch.cat(locs, dim=1)
+        scales = torch.cat(scales, dim=1)
 
-        return means, stds
+        return locs, scales
