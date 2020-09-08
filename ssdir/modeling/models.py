@@ -5,9 +5,9 @@ import pyro
 import pyro.distributions as dist
 import torch
 import torch.nn as nn
-from ssd.config import CfgNode, get_config
-from ssd.modeling.checkpoint import CheckPointer
-from ssd.modeling.model import SSD
+from pyssd.config import CfgNode, get_config
+from pyssd.modeling.checkpoint import CheckPointer
+from pyssd.modeling.model import SSD
 
 from ssdir.modeling import (
     DepthEncoder,

@@ -5,9 +5,9 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from ssd.data.bboxes import convert_locations_to_boxes
-from ssd.data.priors import process_prior
-from ssd.modeling.box_predictors import SSDBoxPredictor
+from pyssd.data.bboxes import convert_locations_to_boxes
+from pyssd.data.priors import process_prior
+from pyssd.modeling.box_predictors import SSDBoxPredictor
 
 
 class WhereEncoder(nn.Module):
