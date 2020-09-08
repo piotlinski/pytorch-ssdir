@@ -6,7 +6,7 @@ help: ## Show this help
 format: ## Run pre-commit hooks to format code
 	 pre-commit run --all-files
 
-args ?= -vvv --cov ssdir
+args ?=  -n auto -vvv --cov ssdir
 test: ## Run tests
 	pytest $(args)
 
