@@ -18,9 +18,6 @@ from ssdir.modeling import (
     WhereTransformer,
 )
 
-pyro.enable_validation()
-pyro.set_rng_seed(0)
-
 
 class Encoder(nn.Module):
     """ Module encoding input image to latent representation.
@@ -161,6 +158,8 @@ class SSDIR(nn.Module):
         z_what_size: int = 64,
         ssd_config_file: str = "assets/pretrained/ssd_mnist/config.yml",
         ssd_model_file: str = "vgg300_singleclass.pth",
+        z_where_scale_eps: float = 1e-5,
+        z_present_p_prior: float = 0.1,
     ):
         super().__init__()
 
@@ -168,6 +167,19 @@ class SSDIR(nn.Module):
         ssd_model = SSD(config=ssd_config)
         ssd_checkpointer = CheckPointer(config=ssd_config, model=ssd_model)
         ssd_checkpointer.load(filename=ssd_model_file)
+
+        self.z_what_size = z_what_size
+        self.n_objects = sum(
+            features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS
+        )
+        self.n_ssd_features = sum(
+            boxes * features ** 2
+            for features, boxes in zip(
+                ssd_config.DATA.PRIOR.FEATURE_MAPS, ssd_config.DATA.PRIOR.BOXES_PER_LOC
+            )
+        )
+        self.z_where_scale_eps = z_where_scale_eps
+        self.z_present_p_prior = z_present_p_prior
 
         self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
         self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size)
@@ -189,3 +201,64 @@ class SSDIR(nn.Module):
         """Perform forward pass through decoder network."""
         outputs = self.decoder(latents)
         return outputs
+
+    def model(self, x: torch.Tensor):
+        """Pyro model; $$P(x|z)P(z)$$."""
+        pyro.module("decoder", self.decoder)
+        batch_size = x.shape[0]
+        with pyro.plate("data"):
+            z_what_loc = torch.zeros((batch_size, self.n_objects, self.z_what_size))
+            z_what_scale = torch.ones_like(z_what_loc)
+
+            z_where_loc = torch.zeros((batch_size, self.n_ssd_features, 4))
+            z_where_scale = torch.full_like(
+                z_where_loc, fill_value=self.z_where_scale_eps
+            )
+
+            z_present_p = torch.full(
+                (batch_size, self.n_ssd_features, 1), fill_value=self.z_present_p_prior
+            )
+
+            z_depth_loc = torch.zeros(batch_size, self.n_objects, 1)
+            z_depth_scale = torch.ones_like(z_depth_loc)
+
+            z_what = pyro.sample(
+                "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(1)
+            )
+            z_where = pyro.sample(
+                "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(1)
+            )
+            z_present = pyro.sample(
+                "z_present", dist.Bernoulli(z_present_p).to_event(1)
+            )
+            z_depth = pyro.sample(
+                "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(1)
+            )
+            print(z_depth.shape)
+
+            output = self.decoder((z_what, z_where, z_present, z_depth))
+
+            pyro.sample(
+                "obs",
+                dist.Bernoulli(output).to_event(1),
+                obs=dist.Bernoulli(x).sample(),
+            )
+
+    def guide(self, x: torch.Tensor):
+        """Pyro guide; $$q(z|x)$$."""
+        pyro.module("encoder", self.encoder)
+        with pyro.plate("data"):
+            (
+                (z_what_loc, z_what_scale),
+                z_where_loc,
+                z_present_p,
+                (z_depth_loc, z_depth_scale),
+            ) = self.encoder(x)
+            z_where_scale = torch.full_like(
+                z_where_loc, fill_value=self.z_where_scale_eps
+            )
+
+            pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(1))
+            pyro.sample("z_where", dist.Normal(z_where_loc, z_where_scale).to_event(1))
+            pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(1))
+            pyro.sample("z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(1))

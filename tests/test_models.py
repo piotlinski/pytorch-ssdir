@@ -1,6 +1,7 @@
 """Test SSDIR models."""
 from unittest.mock import patch
 
+import pyro
 import pytest
 import torch
 
@@ -122,3 +123,30 @@ def test_ssdir_decoder_forward(
     data_shape = (3, *ssd_config.DATA.SHAPE)
     assert outputs.shape == (batch_size, *data_shape)
     assert outputs.dtype == torch.float
+
+
+@patch("ssdir.modeling.models.CheckPointer")
+@patch("ssdir.modeling.models.SSD")
+@patch("ssdir.modeling.models.get_config")
+def test_ssdir_model_guide(
+    get_config_mock, ssd_mock, _checkpointer_mock, ssd_model, ssd_config
+):
+    """Validate Pyro setup for SSDIR."""
+    pyro.enable_validation()
+    pyro.set_rng_seed(0)
+
+    z_what_size = 3
+    batch_size = 2
+    get_config_mock.return_value = ssd_config
+    ssd_mock.return_value = ssd_model
+
+    model = SSDIR(
+        z_what_size=z_what_size,
+        ssd_config_file="test",
+        ssd_model_file="test",
+        z_present_p_prior=0.01,
+    )
+
+    inputs = torch.rand(batch_size, 3, *ssd_config.DATA.SHAPE)
+    model.model(inputs)
+    model.guide(inputs)
