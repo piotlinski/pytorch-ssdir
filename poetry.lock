@@ -544,7 +544,7 @@ description = "Single Shot Multi-Box Detector implementation in PyTorch"
 name = "pyssd"
 optional = false
 python-versions = ">=3.8,<4.0"
-version = "1.0.0"
+version = "1.0.0+393fc57"
 
 [package.dependencies]
 albumentations = ">=0.4.5,<0.5.0"
@@ -976,7 +976,7 @@ version = "0.1.8"
 PyYAML = "*"
 
 [metadata]
-content-hash = "d393d7991ee7f9032f03600a4cb6c9c919be15010b63f6e7f31cd8dbd62e0f6c"
+content-hash = "bfd2cf154f3e1eb311f8fecbda3e23eb16ecee282e94441f3cd54490334a6a8f"
 lock-version = "1.0"
 python-versions = "^3.8"
 
