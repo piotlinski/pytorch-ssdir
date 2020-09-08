@@ -60,9 +60,7 @@ def test_decoder_dimensions(batch_size, ssd_model, ssd_config, n_ssd_features):
 @pytest.mark.parametrize("batch_size", [2, 3])
 @patch("ssdir.modeling.models.CheckPointer")
 @patch("ssdir.modeling.models.SSD")
-@patch("ssdir.modeling.models.get_config")
 def test_ssdir_encoder_forward(
-    _get_config_mock,
     ssd_mock,
     _checkpointer_mock,
     z_what_size,
@@ -73,9 +71,7 @@ def test_ssdir_encoder_forward(
 ):
     """Verify SSDIR encoder_forward output dimensions and dtypes."""
     ssd_mock.return_value = ssd_model
-    model = SSDIR(
-        z_what_size=z_what_size, ssd_config_file="test", ssd_model_file="test"
-    )
+    model = SSDIR(z_what_size=z_what_size, ssd_config=ssd_config, ssd_model_file="test")
 
     data_shape = (3, *ssd_config.DATA.SHAPE)
     inputs = torch.rand(batch_size, *data_shape)
@@ -96,9 +92,7 @@ def test_ssdir_encoder_forward(
 @pytest.mark.parametrize("batch_size", [2, 3])
 @patch("ssdir.modeling.models.CheckPointer")
 @patch("ssdir.modeling.models.SSD")
-@patch("ssdir.modeling.models.get_config")
 def test_ssdir_decoder_forward(
-    _get_config_mock,
     ssd_mock,
     _checkpointer_mock,
     z_what_size,
@@ -109,9 +103,7 @@ def test_ssdir_decoder_forward(
 ):
     """Verify SSDIR encoder_forward output dimensions and dtypes."""
     ssd_mock.return_value = ssd_model
-    model = SSDIR(
-        z_what_size=z_what_size, ssd_config_file="test", ssd_model_file="test"
-    )
+    model = SSDIR(z_what_size=z_what_size, ssd_config=ssd_config, ssd_model_file="test")
 
     n_objects = sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS)
     z_what = torch.rand(batch_size, n_objects, z_what_size)
@@ -127,22 +119,18 @@ def test_ssdir_decoder_forward(
 
 @patch("ssdir.modeling.models.CheckPointer")
 @patch("ssdir.modeling.models.SSD")
-@patch("ssdir.modeling.models.get_config")
-def test_ssdir_model_guide(
-    get_config_mock, ssd_mock, _checkpointer_mock, ssd_model, ssd_config
-):
+def test_ssdir_model_guide(ssd_mock, _checkpointer_mock, ssd_model, ssd_config):
     """Validate Pyro setup for SSDIR."""
     pyro.enable_validation()
     pyro.set_rng_seed(0)
 
     z_what_size = 3
     batch_size = 2
-    get_config_mock.return_value = ssd_config
     ssd_mock.return_value = ssd_model
 
     model = SSDIR(
         z_what_size=z_what_size,
-        ssd_config_file="test",
+        ssd_config=ssd_config,
         ssd_model_file="test",
         z_present_p_prior=0.01,
     )

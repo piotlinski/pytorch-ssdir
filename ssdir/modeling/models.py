@@ -1,5 +1,5 @@
 """SSDIR encoder, decoder, model and guide declarations."""
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import pyro
 import pyro.distributions as dist
@@ -75,7 +75,7 @@ class Decoder(nn.Module):
         ssd_config = ssd.predictor.config
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
-        self.indices = self.reconstruction_indices(ssd_config)
+        self.indices = nn.Parameter(self.reconstruction_indices(ssd_config))
 
     @staticmethod
     def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
@@ -92,7 +92,7 @@ class Decoder(nn.Module):
                 img_idx = last_img_idx + feature_map_idx
                 indices.append(
                     torch.full(
-                        size=(boxes_per_loc,), fill_value=img_idx, dtype=torch.long,
+                        size=(boxes_per_loc,), fill_value=img_idx, dtype=torch.float
                     )
                 )
             last_img_idx = img_idx + 1
@@ -100,7 +100,12 @@ class Decoder(nn.Module):
 
     def _merge_images(self, images: torch.Tensor) -> torch.Tensor:
         """Combine decoded images into one."""
-        combined = torch.zeros(3, self.where_stn.image_size, self.where_stn.image_size)
+        combined = torch.zeros(
+            3,
+            self.where_stn.image_size,
+            self.where_stn.image_size,
+            device=images.device,
+        )
         for image in images:
             combined_zero = combined == 0.0
             image_nonzero = image != 0.0
@@ -121,7 +126,10 @@ class Decoder(nn.Module):
         decoded_images = self.what_dec(z_what)
         transformed_images = self.where_stn(decoded_images, z_where)
         starts_ends = torch.cumsum(
-            torch.cat((torch.zeros(1, dtype=torch.long), n_present)), dim=0
+            torch.cat(
+                (torch.zeros(1, dtype=torch.long, device=n_present.device), n_present)
+            ),
+            dim=0,
         )
         images = []
         for start_idx, end_idx in zip(starts_ends, starts_ends[1:]):
@@ -137,8 +145,8 @@ class Decoder(nn.Module):
         """
         z_what, z_where, z_present, z_depth = latents
         # repeat rows to match z_where and z_present
-        z_what = torch.index_select(input=z_what, dim=1, index=self.indices)
-        z_depth = torch.index_select(input=z_depth, dim=1, index=self.indices)
+        z_what = torch.index_select(input=z_what, dim=1, index=self.indices.long())
+        z_depth = torch.index_select(input=z_depth, dim=1, index=self.indices.long())
         _, sort_index = torch.sort(z_depth, dim=1, descending=True)
         sorted_z_what = z_what.gather(dim=1, index=sort_index.expand_as(z_what))
         sorted_z_where = z_where.gather(dim=1, index=sort_index.expand_as(z_where))
@@ -156,14 +164,16 @@ class SSDIR(nn.Module):
     def __init__(
         self,
         z_what_size: int = 64,
-        ssd_config_file: str = "assets/pretrained/ssd_mnist/config.yml",
-        ssd_model_file: str = "vgg300_singleclass.pth",
+        ssd_config: Optional[CfgNode] = None,
+        ssd_model_file: str = (
+            "vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST-0015-09375.pth"
+        ),
         z_where_scale_eps: float = 1e-5,
         z_present_p_prior: float = 0.1,
     ):
         super().__init__()
-
-        ssd_config = get_config(config_file=ssd_config_file)
+        if ssd_config is None:
+            ssd_config = get_config()
         ssd_model = SSD(config=ssd_config)
         ssd_checkpointer = CheckPointer(config=ssd_config, model=ssd_model)
         ssd_checkpointer.load(filename=ssd_model_file)
@@ -207,40 +217,46 @@ class SSDIR(nn.Module):
         pyro.module("decoder", self.decoder)
         batch_size = x.shape[0]
         with pyro.plate("data"):
-            z_what_loc = torch.zeros((batch_size, self.n_objects, self.z_what_size))
+            z_what_loc = torch.zeros(
+                (batch_size, self.n_objects, self.z_what_size), device=x.device
+            )
             z_what_scale = torch.ones_like(z_what_loc)
 
-            z_where_loc = torch.zeros((batch_size, self.n_ssd_features, 4))
+            z_where_loc = torch.zeros(
+                (batch_size, self.n_ssd_features, 4), device=x.device
+            )
             z_where_scale = torch.full_like(
                 z_where_loc, fill_value=self.z_where_scale_eps
             )
 
             z_present_p = torch.full(
-                (batch_size, self.n_ssd_features, 1), fill_value=self.z_present_p_prior
+                (batch_size, self.n_ssd_features, 1),
+                fill_value=self.z_present_p_prior,
+                dtype=torch.float,
+                device=x.device,
             )
 
-            z_depth_loc = torch.zeros(batch_size, self.n_objects, 1)
+            z_depth_loc = torch.zeros((batch_size, self.n_objects, 1), device=x.device)
             z_depth_scale = torch.ones_like(z_depth_loc)
 
             z_what = pyro.sample(
-                "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(1)
+                "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
             )
             z_where = pyro.sample(
-                "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(1)
+                "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
             )
             z_present = pyro.sample(
-                "z_present", dist.Bernoulli(z_present_p).to_event(1)
+                "z_present", dist.Bernoulli(z_present_p).to_event(2)
             )
             z_depth = pyro.sample(
-                "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(1)
+                "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
             )
-            print(z_depth.shape)
 
             output = self.decoder((z_what, z_where, z_present, z_depth))
 
             pyro.sample(
                 "obs",
-                dist.Bernoulli(output).to_event(1),
+                dist.Bernoulli(output).to_event(3),
                 obs=dist.Bernoulli(x).sample(),
             )
 
@@ -258,7 +274,7 @@ class SSDIR(nn.Module):
                 z_where_loc, fill_value=self.z_where_scale_eps
             )
 
-            pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(1))
-            pyro.sample("z_where", dist.Normal(z_where_loc, z_where_scale).to_event(1))
-            pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(1))
-            pyro.sample("z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(1))
+            pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
+            pyro.sample("z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2))
+            pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
+            pyro.sample("z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2))

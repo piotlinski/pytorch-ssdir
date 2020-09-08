@@ -21,14 +21,16 @@ class WhereEncoder(nn.Module):
     def __init__(self, ssd_box_predictor: SSDBoxPredictor):
         super().__init__()
         self.predictor = ssd_box_predictor
-        self.anchors = process_prior(
-            image_size=ssd_box_predictor.config.DATA.SHAPE,
-            feature_maps=ssd_box_predictor.config.DATA.PRIOR.FEATURE_MAPS,
-            min_sizes=ssd_box_predictor.config.DATA.PRIOR.MIN_SIZES,
-            max_sizes=ssd_box_predictor.config.DATA.PRIOR.MAX_SIZES,
-            strides=ssd_box_predictor.config.DATA.PRIOR.STRIDES,
-            aspect_ratios=ssd_box_predictor.config.DATA.PRIOR.ASPECT_RATIOS,
-            clip=ssd_box_predictor.config.DATA.PRIOR.CLIP,
+        self.anchors = nn.Parameter(
+            process_prior(
+                image_size=ssd_box_predictor.config.DATA.SHAPE,
+                feature_maps=ssd_box_predictor.config.DATA.PRIOR.FEATURE_MAPS,
+                min_sizes=ssd_box_predictor.config.DATA.PRIOR.MIN_SIZES,
+                max_sizes=ssd_box_predictor.config.DATA.PRIOR.MAX_SIZES,
+                strides=ssd_box_predictor.config.DATA.PRIOR.STRIDES,
+                aspect_ratios=ssd_box_predictor.config.DATA.PRIOR.ASPECT_RATIOS,
+                clip=ssd_box_predictor.config.DATA.PRIOR.CLIP,
+            )
         )
         self.center_variance = ssd_box_predictor.config.MODEL.CENTER_VARIANCE
         self.size_variance = ssd_box_predictor.config.MODEL.SIZE_VARIANCE
@@ -88,9 +90,13 @@ class WhereTransformer(nn.Module):
         :return: transformation matrix for transposing and scaling
         """
         n_boxes = sxy.shape[0]
-        transformation_mtx = torch.cat((torch.zeros((n_boxes, 1)), sxy), dim=1)
+        transformation_mtx = torch.cat(
+            (torch.zeros((n_boxes, 1), device=sxy.device), sxy), dim=1
+        )
         return torch.index_select(
-            input=transformation_mtx, dim=1, index=torch.tensor([1, 0, 2, 0, 1, 3])
+            input=transformation_mtx,
+            dim=1,
+            index=torch.tensor([1, 0, 2, 0, 1, 3], device=sxy.device),
         ).view(n_boxes, 2, 3)
 
     def forward(
