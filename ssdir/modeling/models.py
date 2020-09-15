@@ -295,9 +295,7 @@ class SSDIR(nn.Module):
             output = self.decoder((z_what, z_where, z_present, z_depth))
 
             pyro.sample(
-                "obs",
-                dist.Bernoulli(output).to_event(3),
-                obs=dist.Bernoulli(x).sample(),
+                "obs", dist.Bernoulli(output).to_event(3), obs=x,
             )
 
     def guide(self, x: torch.Tensor):
