@@ -7,10 +7,10 @@ def per_param_lr(
 ) -> Callable[[str, str], Dict[str, float]]:
     """Get lr per param name for pyro optim."""
 
-    def callable(module_name: str, param_name: str) -> Dict[str, float]:
+    def lr_callable(module_name: str, param_name: str) -> Dict[str, float]:
         if param_name in lr_dict:
             return {"lr": lr_dict[param_name]}
         else:
             return {"lr": default_lr}
 
-    return callable
+    return lr_callable

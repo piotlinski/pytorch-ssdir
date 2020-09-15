@@ -145,8 +145,9 @@ class Decoder(nn.Module):
         """
         z_what, z_where, z_present, z_depth = latents
         # repeat rows to match z_where and z_present
-        z_what = torch.index_select(input=z_what, dim=1, index=self.indices.long())
-        z_depth = torch.index_select(input=z_depth, dim=1, index=self.indices.long())
+
+        z_what = z_what.index_select(dim=1, index=self.indices.long())
+        z_depth = z_depth.index_select(dim=1, index=self.indices.long())
         _, sort_index = torch.sort(z_depth, dim=1, descending=True)
         sorted_z_what = z_what.gather(dim=1, index=sort_index.expand_as(z_what))
         sorted_z_where = z_where.gather(dim=1, index=sort_index.expand_as(z_where))
