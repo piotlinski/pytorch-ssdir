@@ -5,6 +5,7 @@ import pyro
 import pyro.distributions as dist
 import torch
 import torch.nn as nn
+import torch.nn.functional as functional
 from pyssd.config import CfgNode, get_config
 from pyssd.modeling.checkpoint import CheckPointer
 from pyssd.modeling.model import SSD
@@ -98,43 +99,87 @@ class Decoder(nn.Module):
             last_img_idx = img_idx + 1
         return torch.cat(indices, dim=0)
 
-    def _merge_images(self, images: torch.Tensor) -> torch.Tensor:
-        """Combine decoded images into one."""
-        combined = torch.zeros(
-            3,
-            self.where_stn.image_size,
-            self.where_stn.image_size,
-            device=images.device,
+    @staticmethod
+    def pad_indices(n_present: torch.Tensor) -> torch.Tensor:
+        """ Using number of objects in chunks create indices
+        .. so that every chunk is padded to the same dimension.
+
+        .. Assumes index 0 refers to "starter" (empty) object, added to every chunk.
+
+        :param n_present: number of objects in each chunk
+        :return: indices for padding tensors
+        """
+        end_idx = 1
+        max_objects = torch.max(n_present)
+        indices = []
+        for chunk_objects in n_present:
+            start_idx = end_idx
+            end_idx = end_idx + chunk_objects
+            idx_range = torch.arange(
+                start=start_idx, end=end_idx, dtype=torch.long, device=n_present.device
+            )
+            indices.append(
+                functional.pad(idx_range, pad=[1, max_objects - chunk_objects])
+            )
+        return torch.cat(indices)
+
+    def _pad_reconstructions(
+        self,
+        transformed_images: torch.Tensor,
+        z_depth: torch.Tensor,
+        n_present: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """ Pad tensors to have identical 1. dim shape
+        .. and reshape to (batch_size x n_objects x ...)
+        """
+        image_starter = torch.zeros(
+            (1, 3, self.where_stn.image_size, self.where_stn.image_size),
+            device=transformed_images.device,
         )
-        for image in images:
-            combined_zero = combined == 0.0
-            image_nonzero = image != 0.0
-            mask = combined_zero & image_nonzero
-            combined[mask] = image[mask]
-        return combined
+        z_depth_starter = torch.full(
+            (1, 1), fill_value=-float("inf"), device=z_depth.device
+        )
+        images = torch.cat((image_starter, transformed_images), dim=0)
+        z_depth = torch.cat((z_depth_starter, z_depth), dim=0)
+        max_present = torch.max(n_present)
+        padded_shape = max_present.item() + 1
+        indices = self.pad_indices(n_present)
+        images = images[indices].view(
+            -1, padded_shape, 3, self.where_stn.image_size, self.where_stn.image_size,
+        )
+        z_depth = z_depth[indices].view(-1, padded_shape)
+        return images, z_depth
+
+    @staticmethod
+    def merge_images(images: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        """Combine decoded images into one by weighted sum."""
+        weighted_images = images * weights.view(*weights.shape[:2], 1, 1, 1)
+        return torch.sum(weighted_images, dim=1)
 
     def _render(
-        self, z_what: torch.Tensor, z_where: torch.Tensor, z_present: torch.Tensor
+        self,
+        z_what: torch.Tensor,
+        z_where: torch.Tensor,
+        z_present: torch.Tensor,
+        z_depth: torch.Tensor,
     ) -> torch.Tensor:
         """Render single image from batch."""
         present_mask = z_present == 1
         n_present = torch.sum(present_mask, dim=1).squeeze(-1)
         z_what_size = z_what.shape[-1]
         z_where_size = z_where.shape[-1]
+        z_depth_size = z_depth.shape[-1]
         z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_size)
         z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where_size)
+        z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth_size)
         decoded_images = self.what_dec(z_what)
         transformed_images = self.where_stn(decoded_images, z_where)
-        starts_ends = torch.cumsum(
-            torch.cat(
-                (torch.zeros(1, dtype=torch.long, device=n_present.device), n_present)
-            ),
-            dim=0,
+        images, depths = self._pad_reconstructions(
+            transformed_images=transformed_images, z_depth=z_depth, n_present=n_present
         )
-        images = []
-        for start_idx, end_idx in zip(starts_ends, starts_ends[1:]):
-            images.append(self._merge_images(transformed_images[start_idx:end_idx]))
-        return torch.stack(images, dim=0)
+        merge_weights = functional.softmax(depths, dim=1)
+        reconstructions = self.merge_images(images=images, weights=merge_weights)
+        return reconstructions
 
     def forward(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
@@ -145,16 +190,11 @@ class Decoder(nn.Module):
         """
         z_what, z_where, z_present, z_depth = latents
         # repeat rows to match z_where and z_present
-        z_what = torch.index_select(input=z_what, dim=1, index=self.indices.long())
-        z_depth = torch.index_select(input=z_depth, dim=1, index=self.indices.long())
-        _, sort_index = torch.sort(z_depth, dim=1, descending=True)
-        sorted_z_what = z_what.gather(dim=1, index=sort_index.expand_as(z_what))
-        sorted_z_where = z_where.gather(dim=1, index=sort_index.expand_as(z_where))
-        sorted_z_present = z_present.gather(
-            dim=1, index=sort_index.expand_as(z_present)
-        )
+        z_what = z_what.index_select(dim=1, index=self.indices.long())
+        z_depth = z_depth.index_select(dim=1, index=self.indices.long())
+        # create and apply binary mask for present objects
         return self._render(
-            z_what=sorted_z_what, z_where=sorted_z_where, z_present=sorted_z_present
+            z_what=z_what, z_where=z_where, z_present=z_present, z_depth=z_depth
         )
 
 

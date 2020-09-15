@@ -35,7 +35,7 @@ class WhereEncoder(nn.Module):
         self.center_variance = ssd_box_predictor.config.MODEL.CENTER_VARIANCE
         self.size_variance = ssd_box_predictor.config.MODEL.SIZE_VARIANCE
 
-    def forward(self, features: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
+    def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         """ Takes tuple of tensors (batch_size x grid x grid x features)
         .. and outputs bounding box parameters x_center, y_center, w, h tensor
         .. (batch_size x sum_features(grid*grid*n_boxes) x 4)
@@ -86,17 +86,15 @@ class WhereTransformer(nn.Module):
     def expand_where(sxy: torch.Tensor) -> torch.Tensor:
         """ Take sxy where latent and massage it into a transformation matrix.
 
-        :param where: sxy boxes
+        :param sxy: sxy boxes
         :return: transformation matrix for transposing and scaling
         """
         n_boxes = sxy.shape[0]
         transformation_mtx = torch.cat(
             (torch.zeros((n_boxes, 1), device=sxy.device), sxy), dim=1
         )
-        return torch.index_select(
-            input=transformation_mtx,
-            dim=1,
-            index=torch.tensor([1, 0, 2, 0, 1, 3], device=sxy.device),
+        return transformation_mtx.index_select(
+            dim=1, index=torch.tensor([1, 0, 2, 0, 1, 3], device=sxy.device),
         ).view(n_boxes, 2, 3)
 
     def forward(
@@ -119,7 +117,7 @@ class WhereTransformer(nn.Module):
             )
             grid = functional.affine_grid(
                 theta=theta,
-                size=(n_objects, channels, self.image_size, self.image_size),
+                size=[n_objects, channels, self.image_size, self.image_size],
             )
             transformed_images = functional.grid_sample(
                 input=decoded_images, grid=grid,

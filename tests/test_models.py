@@ -41,6 +41,44 @@ def test_reconstruction_indices(ssd_config, n_ssd_features):
     assert (torch.sort(indices)[0] == indices).all()
 
 
+@pytest.mark.parametrize(
+    "n_present, expected",
+    [
+        (torch.tensor([1, 3, 2]), torch.tensor([0, 1, 0, 0, 0, 2, 3, 4, 0, 5, 6, 0])),
+        (torch.tensor([1, 2, 0]), torch.tensor([0, 1, 0, 0, 2, 3, 0, 0, 0])),
+        (torch.tensor([3, 0, 1]), torch.tensor([0, 1, 2, 3, 0, 0, 0, 0, 0, 4, 0, 0])),
+    ],
+)
+def test_pad_indices(n_present, expected):
+    """Verify pad indices calculation."""
+    indices = Decoder.pad_indices(n_present)
+    assert indices.shape == (n_present.shape[0] * (torch.max(n_present) + 1),)
+    assert torch.max(indices) == torch.sum(n_present)
+    assert (indices == expected).all()
+
+
+@pytest.mark.parametrize(
+    "inputs, weights, expected",
+    [
+        (
+            torch.ones(1, 2, 3, 5, 5),
+            torch.tensor([[0.3, 0.2]]),
+            torch.full((1, 3, 5, 5), fill_value=0.5),
+        ),
+        (
+            torch.ones(2, 3, 3, 2, 2),
+            torch.tensor([[0.2, 0.5, 0.3], [0.1, 0.4, 0.5]]),
+            torch.ones((2, 3, 2, 2)),
+        ),
+    ],
+)
+def test_merge_images(inputs, weights, expected):
+    """Verify weighted sum-based image merging."""
+    merged = Decoder.merge_images(inputs, weights=weights)
+    assert merged.shape == (inputs.shape[0], *inputs.shape[2:])
+    assert (merged == expected).all()
+
+
 @pytest.mark.parametrize("batch_size", [2, 4, 8])
 def test_decoder_dimensions(batch_size, ssd_model, ssd_config, n_ssd_features):
     """Verify decoder output dimensions."""
