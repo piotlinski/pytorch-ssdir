@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from ssdir import SSDIR
-from ssdir.modeling.utils import HorovodOptimizer, per_param_lr
+from ssdir.run.utils import HorovodOptimizer, per_param_lr
 
 logger = logging.getLogger(__name__)
 

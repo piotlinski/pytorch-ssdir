@@ -1,7 +1,7 @@
 """Test modeling utils."""
 import pytest
 
-from ssdir.modeling.utils import per_param_lr
+from ssdir.run.utils import per_param_lr
 
 
 @pytest.mark.parametrize("param", ["test", "abc", "cba"])
