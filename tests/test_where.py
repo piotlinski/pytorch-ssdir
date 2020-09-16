@@ -30,6 +30,17 @@ def test_where_transformer_dimensions(decoded_size, image_size, hidden_size):
     assert outputs.shape == (hidden_size, 3, image_size, image_size)
 
 
+def test_where_transformer_when_empty():
+    """Verify WhereTransformer when given empty input."""
+    decoded_size = 64
+    image_size = 300
+    decoded_images = torch.empty((0, 3, decoded_size, decoded_size))
+    z_where = torch.empty(0, 4)
+    transformer = WhereTransformer(image_size=image_size)
+    output = transformer(decoded_images, z_where)
+    assert output.shape == (0, 3, image_size, image_size)
+
+
 @pytest.mark.parametrize(
     "boxes, image_size, expected",
     [
