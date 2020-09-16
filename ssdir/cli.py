@@ -16,6 +16,7 @@ from tqdm.auto import tqdm
 
 from ssdir import SSDIR
 from ssdir.run.utils import HorovodOptimizer, per_param_lr
+from ssdir.run.visualize import visualize_latents
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,8 @@ def train(
         batch_size=bs,
     )
 
+    vis_images = None
+
     hvd.broadcast_parameters(model.state_dict(), root_rank=0)
     optimizer = HorovodOptimizer(optimizer)
 
@@ -126,9 +129,11 @@ def train(
                 unit="step",
                 postfix=dict(loss=logging_loss),
             )
-        for images, _, _ in steps:
+        for images, *_ in steps:
             images = images.to(device)
             loss = svi.step(images)
+            if vis_images is None:
+                vis_images = images
 
             loss = hvd.allreduce(torch.tensor(loss), "loss")
             loss = loss.item()
@@ -151,6 +156,15 @@ def train(
                 steps.set_postfix(loss=loss)  # type: ignore
 
             global_step += 1
+
+        if hvd.rank() == 0:
+            model.eval()
+            tb_writer.add_figure(
+                tag="inference",
+                figure=visualize_latents(images.to(device), model=model),
+                global_step=global_step,
+            )
+            model.train()
 
     hvd.shutdown()
     if hvd.rank() != 0:

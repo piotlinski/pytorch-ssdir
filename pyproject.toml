@@ -20,6 +20,7 @@ click = "^7.1.2"
 numpy = "^1.19.1"
 tensorboard = "^2.3.0"
 horovod = "^0.20.0"
+matplotlib = "^3.3.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.0.1"

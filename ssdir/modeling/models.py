@@ -10,14 +10,10 @@ from pyssd.config import CfgNode, get_config
 from pyssd.modeling.checkpoint import CheckPointer
 from pyssd.modeling.model import SSD
 
-from ssdir.modeling import (
-    DepthEncoder,
-    PresentEncoder,
-    WhatDecoder,
-    WhatEncoder,
-    WhereEncoder,
-    WhereTransformer,
-)
+from ssdir.modeling.depth import DepthEncoder
+from ssdir.modeling.present import PresentEncoder
+from ssdir.modeling.what import WhatDecoder, WhatEncoder
+from ssdir.modeling.where import WhereEncoder, WhereTransformer
 
 
 class Encoder(nn.Module):
@@ -166,12 +162,9 @@ class Decoder(nn.Module):
         """Render single image from batch."""
         present_mask = z_present == 1
         n_present = torch.sum(present_mask, dim=1).squeeze(-1)
-        z_what_size = z_what.shape[-1]
-        z_where_size = z_where.shape[-1]
-        z_depth_size = z_depth.shape[-1]
-        z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_size)
-        z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where_size)
-        z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth_size)
+        z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what.shape[-1])
+        z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where.shape[-1])
+        z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth.shape[-1])
         decoded_images = self.what_dec(z_what)
         transformed_images = self.where_stn(decoded_images, z_where)
         images, depths = self._pad_reconstructions(
