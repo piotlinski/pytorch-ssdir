@@ -50,6 +50,9 @@ def main(ctx: click.Context):
 @click.option(
     "--logging-step", default=10, help="number of steps between logging", type=int
 )
+@click.option(
+    "--vis-step", default=500, help="number of steps between visualization", type=int
+)
 @click.pass_obj
 def train(
     obj,
@@ -61,6 +64,7 @@ def train(
     ssd_config_file: str,
     tb_dir: str,
     logging_step: int,
+    vis_step: int,
 ):
     """Train the model."""
     hvd.init()
@@ -79,7 +83,7 @@ def train(
     model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size).to(device)
     optimizer = optim.Adam(
         per_param_lr(
-            lr_dict={"z_where": 1e-6 / 100, "z_present": lr / 10}, default_lr=lr
+            lr_dict={"z_where": lr / 100, "z_present": lr / 100}, default_lr=lr
         )
     )
     dataset = datasets[ssd_config.DATA.DATASET](
@@ -155,17 +159,15 @@ def train(
                 epochs.set_postfix(step=global_step, loss=epoch_loss)  # type: ignore
                 steps.set_postfix(loss=loss)  # type: ignore
 
+            if global_step % vis_step == 0 and hvd.rank() == 0:
+                model.eval()
+                tb_writer.add_figure(
+                    tag="inference",
+                    figure=visualize_latents(images.to(device), model=model),
+                    global_step=global_step,
+                )
+                model.train()
+
             global_step += 1
 
-        if hvd.rank() == 0:
-            model.eval()
-            tb_writer.add_figure(
-                tag="inference",
-                figure=visualize_latents(images.to(device), model=model),
-                global_step=global_step,
-            )
-            model.train()
-
     hvd.shutdown()
-    if hvd.rank() != 0:
-        return
