@@ -1,8 +1,11 @@
 """Modeling utils."""
-from typing import Callable, Dict
+from typing import Callable, Dict, Union
 
+import numpy as np
 import pyro
+import torch
 from pyro.optim import PyroOptim
+from pyssd.data.bboxes import corner_bbox_to_center_bbox
 
 
 def per_param_lr(
@@ -17,6 +20,13 @@ def per_param_lr(
             return {"lr": default_lr}
 
     return lr_callable
+
+
+def corner_to_center_target_transform(
+    boxes: Union[np.ndarray, torch.Tensor], labels: Union[np.ndarray, torch.Tensor]
+):
+    """Convert ground truth boxes from corner to center form."""
+    return corner_bbox_to_center_bbox(boxes), labels
 
 
 class HorovodOptimizer(PyroOptim):
