@@ -24,7 +24,7 @@ def plot_image(
     if ax is None:
         ax = plt.gca()
     ax.axis("off")
-    numpy_image = image.cpu().numpy()
+    numpy_image = image.permute(1, 2, 0).cpu().numpy()
     ax.imshow(numpy_image)
     if boxes is not None:
         if details is not None:
@@ -74,7 +74,7 @@ def visualize_latents(
         ):
             subplot_idx = idx * n_cols + 1
             ax = fig.add_subplot(n_rows, n_cols, subplot_idx)
-            plot_image(image=image.permute(1, 2, 0), ax=ax)
+            plot_image(image=image, ax=ax)
             ax.set_title("gt")
 
             indices = model.decoder.indices.long()
@@ -98,14 +98,14 @@ def visualize_latents(
                 zip(transformed_images, sorted_depth), start=1
             ):
                 ax = fig.add_subplot(n_rows, n_cols, subplot_idx + obj_idx)
-                plot_image(image=transformed_image.permute(1, 2, 0), ax=ax)
+                plot_image(image=transformed_image, ax=ax)
                 ax.set_title(f"depth={depth_info.item():1.3f}")
 
             subplot_idx += n_objects + 1
             ax = fig.add_subplot(n_rows, n_cols, subplot_idx)
             plot_image(
-                image=reconstruction.permute(1, 2, 0),
-                boxes=where,
+                image=reconstruction,
+                boxes=where * image.shape[-1],
                 details=[depth],
                 ax=ax,
             )
