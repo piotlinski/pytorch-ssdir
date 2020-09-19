@@ -42,33 +42,42 @@ def test_where_transformer_when_empty():
 
 
 @pytest.mark.parametrize(
-    "boxes, image_size, expected",
+    "boxes, expected",
     [
-        (torch.tensor([1.0, 2.0, 3.0, 4.0]), 32, torch.tensor([2.0, 32.0, 64.0])),
+        (torch.tensor([1.0, 3.0, 2.0, 4.0]), torch.tensor([-0.5, -1.25, 0.5, 0.25])),
         (
-            torch.tensor([[10.0, 12.0, 8.0, 6.0], [6.0, 4.0, 2.0, 5.0]]),
-            128,
-            torch.tensor([[16.0, 1280.0, 1536.0], [10.0, 768.0, 512.0]]),
+            torch.tensor([[10.0, 12.0, 8.0, 10.0], [6.0, 4.0, 2.0, 5.0]]),
+            torch.tensor([[-2.375, -2.3, 0.125, 0.1], [-5.5, -1.4, 0.5, 0.2]]),
         ),
         (
-            torch.tensor([[[0.5, 0.2, 0.4, 0.3]]]),
-            128,
-            torch.tensor([[[0.8, 64, 25.6]]]),
+            torch.tensor([[[0.5, 0.2, 0.4, 0.5]]]),
+            torch.tensor([[[0.0, 1.2, 2.5, 2.0]]]),
         ),
     ],
 )
-def test_convert_to_sxy(boxes, image_size, expected):
+def test_scale_boxes(boxes, expected):
     """Verify converting xywh boxes to sxy."""
-    transformer = WhereTransformer(image_size=image_size)
-    sxy = transformer.convert_boxes_to_sxy(boxes)
-    assert (sxy == expected).all()
+    transformer = WhereTransformer(image_size=1)
+    scaled_boxes = transformer.scale_boxes(boxes)
+    assert (scaled_boxes == expected).all()
 
 
-def test_expand_where():
-    """Verify expanding sxy to transformation matrix."""
-    sxy = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-    expected = torch.tensor(
-        [[[1.0, 0.0, 2.0], [0.0, 1.0, 3.0]], [[4.0, 0.0, 5.0], [0.0, 4.0, 6.0]]]
-    )
-    transformation_mtx = WhereTransformer.expand_where(sxy)
+@pytest.mark.parametrize(
+    "boxes, expected",
+    [
+        (
+            torch.tensor([[1.0, 2.0, 3.0, 4.0]]),
+            torch.tensor([[[3.0, 0.0, 1.0], [0.0, 4.0, 2.0]]]),
+        ),
+        (
+            torch.tensor([[5.0, 6.0, 7.0, 8.0], [2.0, 3.0, 9.0, 0.0]]),
+            torch.tensor(
+                [[[7.0, 0.0, 5.0], [0.0, 8.0, 6.0]], [[9.0, 0.0, 2.0], [0.0, 0.0, 3.0]]]
+            ),
+        ),
+    ],
+)
+def test_expand_convert_boxes_to_theta(boxes, expected):
+    """Verify expanding boxes to transformation matrix."""
+    transformation_mtx = WhereTransformer.convert_boxes_to_theta(boxes)
     assert (transformation_mtx == expected).all()

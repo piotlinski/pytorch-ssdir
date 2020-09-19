@@ -67,34 +67,39 @@ class WhereTransformer(nn.Module):
     def __init__(self, image_size: int):
         super().__init__()
         self.image_size = image_size
-        self.decoded_size = 64
-
-    def convert_boxes_to_sxy(self, where_boxes: torch.Tensor) -> torch.Tensor:
-        """ Convert where latents into sxy format.
-
-        :param where_boxes: latent - detection box
-        :return: sxy
-        """
-        s_where, _ = torch.max(where_boxes[..., 2:], dim=-1, keepdim=True)
-        xy_where = where_boxes[..., :2]
-        return torch.cat(
-            (s_where * self.image_size / self.decoded_size, xy_where * self.image_size),
-            dim=-1,
-        )
 
     @staticmethod
-    def expand_where(sxy: torch.Tensor) -> torch.Tensor:
-        """ Take sxy where latent and massage it into a transformation matrix.
+    def scale_boxes(where_boxes: torch.Tensor) -> torch.Tensor:
+        """ Adjust scaled XYWH boxes to STN format.
 
-        :param sxy: sxy boxes
+        .. t_{XY} = (1 - 2 * {XY}) * s_{WH}
+           s_{WH} = 1 / {WH}
+
+        :param where_boxes: latent - detection box
+        :return: scaled box
+        """
+        xy = where_boxes[..., :2]
+        wh = where_boxes[..., 2:]
+        scaled_wh = 1 / wh
+        scaled_xy = (1 - 2 * xy) * scaled_wh
+        return torch.cat((scaled_xy, scaled_wh), dim=-1)
+
+    @staticmethod
+    def convert_boxes_to_theta(where_boxes: torch.Tensor) -> torch.Tensor:
+        """ Convert where latents to transformation matrix.
+
+        .. [ w_scale    0    x_translation ]
+           [    0    h_scale y_translation ]
+
+        :param where_boxes: latent - detection box
         :return: transformation matrix for transposing and scaling
         """
-        n_boxes = sxy.shape[0]
+        n_boxes = where_boxes.shape[0]
         transformation_mtx = torch.cat(
-            (torch.zeros((n_boxes, 1), device=sxy.device), sxy), dim=1
+            (torch.zeros((n_boxes, 1), device=where_boxes.device), where_boxes), dim=1
         )
         return transformation_mtx.index_select(
-            dim=1, index=torch.tensor([1, 0, 2, 0, 1, 3], device=sxy.device),
+            dim=1, index=torch.tensor([3, 0, 1, 0, 4, 2], device=where_boxes.device),
         ).view(n_boxes, 2, 3)
 
     def forward(
@@ -109,8 +114,8 @@ class WhereTransformer(nn.Module):
         n_objects = decoded_images.shape[0]
         channels = decoded_images.shape[1]
         if where_boxes.numel():
-            sxy = self.convert_boxes_to_sxy(where_boxes=where_boxes)
-            theta = self.expand_where(sxy)
+            scaled_boxes = self.scale_boxes(where_boxes)
+            theta = self.convert_boxes_to_theta(where_boxes=scaled_boxes)
             with warnings.catch_warnings():
                 warnings.filterwarnings(
                     "ignore",
