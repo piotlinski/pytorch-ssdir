@@ -9,13 +9,17 @@ import torch
 from pyro.infer import SVI, Trace_ELBO
 from pyssd.config import get_config
 from pyssd.data.datasets import datasets
-from pyssd.data.transforms import SSDTargetTransform, TrainDataTransform
+from pyssd.data.transforms import TrainDataTransform
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from ssdir import SSDIR
-from ssdir.run.utils import HorovodOptimizer, per_param_lr
+from ssdir.run.utils import (
+    HorovodOptimizer,
+    corner_to_center_target_transform,
+    per_param_lr,
+)
 from ssdir.run.visualize import visualize_latents
 
 logger = logging.getLogger(__name__)
@@ -89,7 +93,7 @@ def train(
     dataset = datasets[ssd_config.DATA.DATASET](
         f"{ssd_config.ASSETS_DIR}/{ssd_config.DATA.DATASET_DIR}",
         data_transform=TrainDataTransform(ssd_config),
-        target_transform=SSDTargetTransform(ssd_config),
+        target_transform=corner_to_center_target_transform,
         subset="train",
     )
     sampler = torch.utils.data.distributed.DistributedSampler(
