@@ -202,7 +202,7 @@ class SSDIR(nn.Module):
             "vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST-0015-09375.pth"
         ),
         z_where_scale_eps: float = 1e-5,
-        z_present_p_prior: float = 0.1,
+        z_present_p_prior: float = 0.01,
     ):
         super().__init__()
         if ssd_config is None:
