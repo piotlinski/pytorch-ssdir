@@ -73,7 +73,9 @@ class Decoder(nn.Module):
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
         self.indices = nn.Parameter(self.reconstruction_indices(ssd_config))
-        self.empty_obj_const = torch.tensor(empty_obj_const, dtype=torch.float32)
+        self.empty_obj_const = nn.Parameter(
+            torch.tensor(empty_obj_const, dtype=torch.float32)
+        )
 
     @staticmethod
     def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
