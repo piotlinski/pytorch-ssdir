@@ -42,22 +42,6 @@ def test_reconstruction_indices(ssd_config, n_ssd_features):
 
 
 @pytest.mark.parametrize(
-    "n_present, expected",
-    [
-        (torch.tensor([1, 3, 2]), torch.tensor([0, 1, 0, 0, 0, 2, 3, 4, 0, 5, 6, 0])),
-        (torch.tensor([1, 2, 0]), torch.tensor([0, 1, 0, 0, 2, 3, 0, 0, 0])),
-        (torch.tensor([3, 0, 1]), torch.tensor([0, 1, 2, 3, 0, 0, 0, 0, 0, 4, 0, 0])),
-    ],
-)
-def test_pad_indices(n_present, expected):
-    """Verify pad indices calculation."""
-    indices = Decoder.pad_indices(n_present)
-    assert indices.shape == (n_present.shape[0] * (torch.max(n_present) + 1),)
-    assert torch.max(indices) == torch.sum(n_present)
-    assert (indices == expected).all()
-
-
-@pytest.mark.parametrize(
     "inputs, weights, expected",
     [
         (
@@ -77,6 +61,33 @@ def test_merge_images(inputs, weights, expected):
     merged = Decoder.merge_images(inputs, weights=weights)
     assert merged.shape == (inputs.shape[0], *inputs.shape[2:])
     assert (merged == expected).all()
+
+
+@pytest.mark.parametrize(
+    "present, depth, expected",
+    [
+        (
+            torch.tensor([[1.0, 1.0, 1.0, 1.0]]),
+            torch.tensor([[1.0, 1.0, 1.0, 1.0]]),
+            torch.tensor([[0.25, 0.25, 0.25, 0.25]]),
+        ),
+        (
+            torch.tensor([[0.0, 0.0]]),
+            torch.tensor([[1.0, 1.0]]),
+            torch.tensor([[0.5, 0.5]]),
+        ),
+        (
+            torch.tensor([[1.0, 0.0, 1.0], [0.0, 0.0, 1.0]]),
+            torch.tensor([[1.0, 1.0, 1.0], [1.0, 5.0, 1.0]]),
+            torch.tensor([[0.5, 0.0, 0.5], [0.0, 0.0, 1.0]]),
+        ),
+    ],
+)
+def test_prepare_merge_weights(present, depth, expected, ssd_model):
+    """Verify merging present and depth tensor."""
+    decoder = Decoder(ssd=ssd_model)
+    merge_weights = decoder.prepare_merge_weights(present, depth)
+    assert torch.allclose(merge_weights, expected, atol=1e-3, rtol=1e-3)
 
 
 @pytest.mark.parametrize("batch_size", [2, 4, 8])

@@ -67,12 +67,13 @@ class Decoder(nn.Module):
        - merge transformed images based on $$z_{depth}$$
     """
 
-    def __init__(self, ssd: SSD, z_what_size: int = 64):
+    def __init__(self, ssd: SSD, z_what_size: int = 64, empty_obj_const: float = -1000):
         super().__init__()
         ssd_config = ssd.predictor.config
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
         self.indices = nn.Parameter(self.reconstruction_indices(ssd_config))
+        self.empty_obj_const = torch.tensor(empty_obj_const, dtype=torch.float32)
 
     @staticmethod
     def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
@@ -96,61 +97,15 @@ class Decoder(nn.Module):
         return torch.cat(indices, dim=0)
 
     @staticmethod
-    def pad_indices(n_present: torch.Tensor) -> torch.Tensor:
-        """ Using number of objects in chunks create indices
-        .. so that every chunk is padded to the same dimension.
-
-        .. Assumes index 0 refers to "starter" (empty) object, added to every chunk.
-
-        :param n_present: number of objects in each chunk
-        :return: indices for padding tensors
-        """
-        end_idx = 1
-        max_objects = torch.max(n_present)
-        indices = []
-        for chunk_objects in n_present:
-            start_idx = end_idx
-            end_idx = end_idx + chunk_objects
-            idx_range = torch.arange(
-                start=start_idx, end=end_idx, dtype=torch.long, device=n_present.device
-            )
-            indices.append(
-                functional.pad(idx_range, pad=[1, max_objects - chunk_objects])
-            )
-        return torch.cat(indices)
-
-    def _pad_reconstructions(
-        self,
-        transformed_images: torch.Tensor,
-        z_depth: torch.Tensor,
-        n_present: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """ Pad tensors to have identical 1. dim shape
-        .. and reshape to (batch_size x n_objects x ...)
-        """
-        image_starter = torch.zeros(
-            (1, 3, self.where_stn.image_size, self.where_stn.image_size),
-            device=transformed_images.device,
-        )
-        z_depth_starter = torch.full(
-            (1, 1), fill_value=-float("inf"), device=z_depth.device
-        )
-        images = torch.cat((image_starter, transformed_images), dim=0)
-        z_depth = torch.cat((z_depth_starter, z_depth), dim=0)
-        max_present = torch.max(n_present)
-        padded_shape = max_present.item() + 1
-        indices = self.pad_indices(n_present)
-        images = images[indices].view(
-            -1, padded_shape, 3, self.where_stn.image_size, self.where_stn.image_size,
-        )
-        z_depth = z_depth[indices].view(-1, padded_shape)
-        return images, z_depth
-
-    @staticmethod
     def merge_images(images: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
         """Combine decoded images into one by weighted sum."""
         weighted_images = images * weights.view(*weights.shape[:2], 1, 1, 1)
         return torch.sum(weighted_images, dim=1)
+
+    def prepare_merge_weights(self, present: torch.Tensor, depth: torch.Tensor):
+        """Merge present tensor with depth tensor and apply softmax."""
+        weights = depth.where(present == 1.0, self.empty_obj_const)
+        return functional.softmax(weights, dim=1)
 
     def _render(
         self,
@@ -160,18 +115,16 @@ class Decoder(nn.Module):
         z_depth: torch.Tensor,
     ) -> torch.Tensor:
         """Render single image from batch."""
-        present_mask = z_present == 1
-        n_present = torch.sum(present_mask, dim=1).squeeze(-1)
-        z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what.shape[-1])
-        z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where.shape[-1])
-        z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth.shape[-1])
-        decoded_images = self.what_dec(z_what)
-        transformed_images = self.where_stn(decoded_images, z_where)
-        images, depths = self._pad_reconstructions(
-            transformed_images=transformed_images, z_depth=z_depth, n_present=n_present
+        z_what_flattened = z_what.view(-1, z_what.shape[-1])
+        z_where_flattened = z_where.view(-1, z_where.shape[-1])
+        decoded_images = self.what_dec(z_what_flattened)
+        transformed_images = self.where_stn(decoded_images, z_where_flattened).view(
+            -1, z_what.shape[1], 3, self.where_stn.image_size, self.where_stn.image_size
         )
-        merge_weights = functional.softmax(depths, dim=1)
-        reconstructions = self.merge_images(images=images, weights=merge_weights)
+        merge_weights = self.prepare_merge_weights(present=z_present, depth=z_depth)
+        reconstructions = self.merge_images(
+            images=transformed_images, weights=merge_weights
+        )
         return reconstructions
 
     def forward(
