@@ -41,7 +41,10 @@ def main(ctx: click.Context):
 @click.option("--device", default="cuda", help="device for training", type=str)
 @click.option(
     "--ssd-config-file",
-    default="assets/pretrained/vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST/config.yml",
+    default=(
+        "assets/pretrained"
+        "/vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST/vgglite_mnist_sc.yml"
+    ),
     help="ssd config to be used",
     type=str,
 )
@@ -167,7 +170,7 @@ def train(
                 model.eval()
                 tb_writer.add_figure(
                     tag="inference",
-                    figure=visualize_latents(images.to(device), model=model),
+                    figure=visualize_latents(vis_images.to(device), model=model),
                     global_step=global_step,
                 )
                 model.train()
