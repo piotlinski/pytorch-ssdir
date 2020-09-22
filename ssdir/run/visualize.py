@@ -85,9 +85,9 @@ def visualize_latents(
             where = where[present_mask.expand_as(where)].view(-1, where.shape[-1])
             depth = depth[present_mask.expand_as(depth)].view(-1, depth.shape[-1])
 
-            sorted_depth, sort_index = torch.sort(depth, dim=1, descending=True)
-            sorted_what = what.gather(dim=1, index=sort_index.expand_as(what))
-            sorted_where = where.gather(dim=1, index=sort_index.expand_as(where))
+            sorted_depth, sort_index = torch.sort(depth, dim=0, descending=True)
+            sorted_what = what.gather(dim=0, index=sort_index.expand_as(what))
+            sorted_where = where.gather(dim=0, index=sort_index.expand_as(where))
 
             decoded_images = model.decoder.what_dec(sorted_what[:n_objects])
             transformed_images = model.decoder.where_stn(
