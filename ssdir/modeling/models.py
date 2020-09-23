@@ -161,14 +161,23 @@ class Decoder(nn.Module):
     ) -> torch.Tensor:
         """Render single image from batch."""
         present_mask = z_present == 1
+        z_what_shape = z_what.shape[-1]
+        z_where_shape = z_where.shape[-1]
+        z_depth_shape = z_depth.shape[-1]
         n_present = torch.sum(present_mask, dim=1).squeeze(-1)
-        z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what.shape[-1])
-        z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where.shape[-1])
-        z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth.shape[-1])
-        decoded_images = self.what_dec(z_what)
-        transformed_images = self.where_stn(decoded_images, z_where)
+        z_what_present = z_what[present_mask.expand_as(z_what)].view(-1, z_what_shape)
+        z_where_present = z_where[present_mask.expand_as(z_where)].view(
+            -1, z_where_shape
+        )
+        z_depth_present = z_depth[present_mask.expand_as(z_depth)].view(
+            -1, z_depth_shape
+        )
+        decoded_images = self.what_dec(z_what_present)
+        transformed_images = self.where_stn(decoded_images, z_where_present)
         images, depths = self._pad_reconstructions(
-            transformed_images=transformed_images, z_depth=z_depth, n_present=n_present
+            transformed_images=transformed_images,
+            z_depth=z_depth_present,
+            n_present=n_present,
         )
         merge_weights = functional.softmax(depths, dim=1)
         reconstructions = self.merge_images(images=images, weights=merge_weights)

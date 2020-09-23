@@ -5,7 +5,7 @@ from ssdir.run.utils import per_param_lr
 
 
 @pytest.mark.parametrize(
-    "param, value", [("test", 0.1), ("te", 0.1), ("abc", 0.01), ("cba", 0.123)]
+    "param, value", [("test", 0.1), ("testtest", 0.1), ("abc", 0.01), ("cba", 0.123)]
 )
 def test_per_param_lr(param, value):
     """Verify callable for pyro optimizer."""
