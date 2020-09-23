@@ -293,6 +293,7 @@ class SSDIR(nn.Module):
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
+        pyro.module("backbone", self.encoder.ssd.backbone)
         pyro.module("encoder", self.encoder)
         with pyro.plate("data"):
             (

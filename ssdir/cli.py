@@ -36,8 +36,9 @@ def main(ctx: click.Context):
 @main.command(help="Train model")
 @click.option("--n-epochs", default=100, help="number of epochs", type=int)
 @click.option("--lr", default=1e-4, help="learning rate", type=float)
-@click.option("--where-lr", default=1e-4, help="z_where learning rate", type=float)
-@click.option("--present-lr", default=1e-4, help="z_present learning rate", type=float)
+@click.option(
+    "--backbone-lr", default=1e-4, help="ssd backbone learning rate", type=float
+)
 @click.option("--bs", default=4, help="batch size", type=int)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
 @click.option("--device", default="cuda", help="device for training", type=str)
@@ -67,8 +68,7 @@ def train(
     obj,
     n_epochs: int,
     lr: float,
-    where_lr: float,
-    present_lr: float,
+    backbone_lr: float,
     bs: int,
     z_what_size: int,
     device: str,
@@ -94,7 +94,12 @@ def train(
     model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size).to(device)
     optimizer = optim.Adam(
         per_param_lr(
-            lr_dict={"z_where": where_lr, "z_present": present_lr}, default_lr=lr
+            lr_dict={
+                "z_where": backbone_lr,
+                "z_present": backbone_lr,
+                "backbone": backbone_lr,
+            },
+            default_lr=lr,
         )
     )
     dataset = datasets[ssd_config.DATA.DATASET](
@@ -115,6 +120,7 @@ def train(
     )
 
     vis_images = None
+    vis_boxes = None
 
     hvd.broadcast_parameters(model.state_dict(), root_rank=0)
     optimizer = HorovodOptimizer(optimizer)
@@ -144,11 +150,12 @@ def train(
                 unit="step",
                 postfix=dict(loss=logging_loss),
             )
-        for images, *_ in steps:
+        for images, boxes, _ in steps:
             images = images.to(device)
             loss = svi.step(images)
-            if vis_images is None:
+            if vis_images is None and vis_boxes is None:
                 vis_images = images
+                vis_boxes = boxes
 
             loss = hvd.allreduce(torch.tensor(loss), "loss")
             loss = loss.item()
@@ -174,7 +181,9 @@ def train(
                 model.eval()
                 tb_writer.add_figure(
                     tag="inference",
-                    figure=visualize_latents(vis_images.to(device), model=model),
+                    figure=visualize_latents(
+                        vis_images.to(device), boxes=vis_boxes, model=model
+                    ),
                     global_step=global_step,
                 )
                 model.train()
