@@ -1,5 +1,5 @@
 """Modeling utils."""
-from typing import Callable, Dict, Union
+from typing import Callable, Dict, Tuple, Union
 
 import numpy as np
 import pyro
@@ -15,10 +15,10 @@ def per_param_lr(
     """Get lr per param name for pyro optim."""
 
     def lr_callable(module_name: str, param_name: str) -> Dict[str, float]:
-        if param_name in lr_dict:
-            return {"lr": lr_dict[param_name]}
-        else:
-            return {"lr": default_lr}
+        for key, value in lr_dict.items():  # type: Tuple[str, float]
+            if key in param_name:
+                return {"lr": value}
+        return {"lr": default_lr}
 
     return lr_callable
 

@@ -92,16 +92,7 @@ def train(
     global_step = 0
 
     model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size).to(device)
-    optimizer = optim.Adam(
-        per_param_lr(
-            lr_dict={
-                "z_where": backbone_lr,
-                "z_present": backbone_lr,
-                "backbone": backbone_lr,
-            },
-            default_lr=lr,
-        )
-    )
+    optimizer = optim.Adam(per_param_lr(lr_dict={"ssd": backbone_lr}, default_lr=lr,))
     dataset = datasets[ssd_config.DATA.DATASET](
         f"{ssd_config.ASSETS_DIR}/{ssd_config.DATA.DATASET_DIR}",
         data_transform=TrainDataTransform(ssd_config),
