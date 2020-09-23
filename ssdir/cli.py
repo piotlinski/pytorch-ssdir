@@ -36,6 +36,8 @@ def main(ctx: click.Context):
 @main.command(help="Train model")
 @click.option("--n-epochs", default=100, help="number of epochs", type=int)
 @click.option("--lr", default=1e-4, help="learning rate", type=float)
+@click.option("--where-lr", default=1e-4, help="z_where learning rate", type=float)
+@click.option("--present-lr", default=1e-4, help="z_present learning rate", type=float)
 @click.option("--bs", default=4, help="batch size", type=int)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
 @click.option("--device", default="cuda", help="device for training", type=str)
@@ -65,6 +67,8 @@ def train(
     obj,
     n_epochs: int,
     lr: float,
+    where_lr: float,
+    present_lr: float,
     bs: int,
     z_what_size: int,
     device: str,
@@ -90,7 +94,7 @@ def train(
     model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size).to(device)
     optimizer = optim.Adam(
         per_param_lr(
-            lr_dict={"z_where": lr / 100, "z_present": lr / 100}, default_lr=lr
+            lr_dict={"z_where": where_lr, "z_present": present_lr}, default_lr=lr
         )
     )
     dataset = datasets[ssd_config.DATA.DATASET](
