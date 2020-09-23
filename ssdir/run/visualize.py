@@ -110,4 +110,4 @@ def visualize_latents(
                 ax=ax,
             )
             ax.set_title("reconstruction")
-            return fig
+        return fig
