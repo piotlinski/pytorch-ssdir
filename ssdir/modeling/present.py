@@ -3,7 +3,7 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
-from ssd.modeling.box_predictors import SSDBoxPredictor
+from pyssd.modeling.box_predictors import SSDBoxPredictor
 
 
 class PresentEncoder(nn.Module):

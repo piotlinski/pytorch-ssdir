@@ -13,8 +13,14 @@ url = "https://pypi.trasee.io/simple/"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-ssd = { version="1.0.0", source="trasee" }
+pyssd = { version="1.0.0+393fc57", source="trasee" }
 pyro-ppl = "^1.4.0"
+tqdm = "^4.48.2"
+click = "^7.1.2"
+numpy = "^1.19.1"
+tensorboard = "^2.3.0"
+horovod = "^0.20.0"
+matplotlib = "^3.3.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.0.1"

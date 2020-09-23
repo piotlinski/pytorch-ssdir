@@ -41,6 +41,44 @@ def test_reconstruction_indices(ssd_config, n_ssd_features):
     assert (torch.sort(indices)[0] == indices).all()
 
 
+@pytest.mark.parametrize(
+    "n_present, expected",
+    [
+        (torch.tensor([1, 3, 2]), torch.tensor([0, 1, 0, 0, 0, 2, 3, 4, 0, 5, 6, 0])),
+        (torch.tensor([1, 2, 0]), torch.tensor([0, 1, 0, 0, 2, 3, 0, 0, 0])),
+        (torch.tensor([3, 0, 1]), torch.tensor([0, 1, 2, 3, 0, 0, 0, 0, 0, 4, 0, 0])),
+    ],
+)
+def test_pad_indices(n_present, expected):
+    """Verify pad indices calculation."""
+    indices = Decoder.pad_indices(n_present)
+    assert indices.shape == (n_present.shape[0] * (torch.max(n_present) + 1),)
+    assert torch.max(indices) == torch.sum(n_present)
+    assert (indices == expected).all()
+
+
+@pytest.mark.parametrize(
+    "inputs, weights, expected",
+    [
+        (
+            torch.ones(1, 2, 3, 5, 5),
+            torch.tensor([[0.3, 0.2]]),
+            torch.full((1, 3, 5, 5), fill_value=0.5),
+        ),
+        (
+            torch.ones(2, 3, 3, 2, 2),
+            torch.tensor([[0.2, 0.5, 0.3], [0.1, 0.4, 0.5]]),
+            torch.ones((2, 3, 2, 2)),
+        ),
+    ],
+)
+def test_merge_images(inputs, weights, expected):
+    """Verify weighted sum-based image merging."""
+    merged = Decoder.merge_images(inputs, weights=weights)
+    assert merged.shape == (inputs.shape[0], *inputs.shape[2:])
+    assert (merged == expected).all()
+
+
 @pytest.mark.parametrize("batch_size", [2, 4, 8])
 def test_decoder_dimensions(batch_size, ssd_model, ssd_config, n_ssd_features):
     """Verify decoder output dimensions."""
@@ -60,9 +98,7 @@ def test_decoder_dimensions(batch_size, ssd_model, ssd_config, n_ssd_features):
 @pytest.mark.parametrize("batch_size", [2, 3])
 @patch("ssdir.modeling.models.CheckPointer")
 @patch("ssdir.modeling.models.SSD")
-@patch("ssdir.modeling.models.get_config")
 def test_ssdir_encoder_forward(
-    _get_config_mock,
     ssd_mock,
     _checkpointer_mock,
     z_what_size,
@@ -73,9 +109,7 @@ def test_ssdir_encoder_forward(
 ):
     """Verify SSDIR encoder_forward output dimensions and dtypes."""
     ssd_mock.return_value = ssd_model
-    model = SSDIR(
-        z_what_size=z_what_size, ssd_config_file="test", ssd_model_file="test"
-    )
+    model = SSDIR(z_what_size=z_what_size, ssd_config=ssd_config, ssd_model_file="test")
 
     data_shape = (3, *ssd_config.DATA.SHAPE)
     inputs = torch.rand(batch_size, *data_shape)
@@ -96,9 +130,7 @@ def test_ssdir_encoder_forward(
 @pytest.mark.parametrize("batch_size", [2, 3])
 @patch("ssdir.modeling.models.CheckPointer")
 @patch("ssdir.modeling.models.SSD")
-@patch("ssdir.modeling.models.get_config")
 def test_ssdir_decoder_forward(
-    _get_config_mock,
     ssd_mock,
     _checkpointer_mock,
     z_what_size,
@@ -109,9 +141,7 @@ def test_ssdir_decoder_forward(
 ):
     """Verify SSDIR encoder_forward output dimensions and dtypes."""
     ssd_mock.return_value = ssd_model
-    model = SSDIR(
-        z_what_size=z_what_size, ssd_config_file="test", ssd_model_file="test"
-    )
+    model = SSDIR(z_what_size=z_what_size, ssd_config=ssd_config, ssd_model_file="test")
 
     n_objects = sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS)
     z_what = torch.rand(batch_size, n_objects, z_what_size)
@@ -127,22 +157,18 @@ def test_ssdir_decoder_forward(
 
 @patch("ssdir.modeling.models.CheckPointer")
 @patch("ssdir.modeling.models.SSD")
-@patch("ssdir.modeling.models.get_config")
-def test_ssdir_model_guide(
-    get_config_mock, ssd_mock, _checkpointer_mock, ssd_model, ssd_config
-):
+def test_ssdir_model_guide(ssd_mock, _checkpointer_mock, ssd_model, ssd_config):
     """Validate Pyro setup for SSDIR."""
     pyro.enable_validation()
     pyro.set_rng_seed(0)
 
     z_what_size = 3
     batch_size = 2
-    get_config_mock.return_value = ssd_config
     ssd_mock.return_value = ssd_model
 
     model = SSDIR(
         z_what_size=z_what_size,
-        ssd_config_file="test",
+        ssd_config=ssd_config,
         ssd_model_file="test",
         z_present_p_prior=0.01,
     )

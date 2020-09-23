@@ -5,9 +5,9 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from ssd.data.bboxes import convert_locations_to_boxes
-from ssd.data.priors import process_prior
-from ssd.modeling.box_predictors import SSDBoxPredictor
+from pyssd.data.bboxes import convert_locations_to_boxes
+from pyssd.data.priors import process_prior
+from pyssd.modeling.box_predictors import SSDBoxPredictor
 
 
 class WhereEncoder(nn.Module):
@@ -21,19 +21,21 @@ class WhereEncoder(nn.Module):
     def __init__(self, ssd_box_predictor: SSDBoxPredictor):
         super().__init__()
         self.predictor = ssd_box_predictor
-        self.anchors = process_prior(
-            image_size=ssd_box_predictor.config.DATA.SHAPE,
-            feature_maps=ssd_box_predictor.config.DATA.PRIOR.FEATURE_MAPS,
-            min_sizes=ssd_box_predictor.config.DATA.PRIOR.MIN_SIZES,
-            max_sizes=ssd_box_predictor.config.DATA.PRIOR.MAX_SIZES,
-            strides=ssd_box_predictor.config.DATA.PRIOR.STRIDES,
-            aspect_ratios=ssd_box_predictor.config.DATA.PRIOR.ASPECT_RATIOS,
-            clip=ssd_box_predictor.config.DATA.PRIOR.CLIP,
+        self.anchors = nn.Parameter(
+            process_prior(
+                image_size=ssd_box_predictor.config.DATA.SHAPE,
+                feature_maps=ssd_box_predictor.config.DATA.PRIOR.FEATURE_MAPS,
+                min_sizes=ssd_box_predictor.config.DATA.PRIOR.MIN_SIZES,
+                max_sizes=ssd_box_predictor.config.DATA.PRIOR.MAX_SIZES,
+                strides=ssd_box_predictor.config.DATA.PRIOR.STRIDES,
+                aspect_ratios=ssd_box_predictor.config.DATA.PRIOR.ASPECT_RATIOS,
+                clip=ssd_box_predictor.config.DATA.PRIOR.CLIP,
+            )
         )
         self.center_variance = ssd_box_predictor.config.MODEL.CENTER_VARIANCE
         self.size_variance = ssd_box_predictor.config.MODEL.SIZE_VARIANCE
 
-    def forward(self, features: Tuple[torch.Tensor, ...]) -> Tuple[torch.Tensor, ...]:
+    def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         """ Takes tuple of tensors (batch_size x grid x grid x features)
         .. and outputs bounding box parameters x_center, y_center, w, h tensor
         .. (batch_size x sum_features(grid*grid*n_boxes) x 4)
@@ -65,32 +67,39 @@ class WhereTransformer(nn.Module):
     def __init__(self, image_size: int):
         super().__init__()
         self.image_size = image_size
-        self.decoded_size = 64
-
-    def convert_boxes_to_sxy(self, where_boxes: torch.Tensor) -> torch.Tensor:
-        """ Convert where latents into sxy format.
-
-        :param where_boxes: latent - detection box
-        :return: sxy
-        """
-        s_where, _ = torch.max(where_boxes[..., 2:], dim=-1, keepdim=True)
-        xy_where = where_boxes[..., :2]
-        return torch.cat(
-            (s_where * self.image_size / self.decoded_size, xy_where * self.image_size),
-            dim=-1,
-        )
 
     @staticmethod
-    def expand_where(sxy: torch.Tensor) -> torch.Tensor:
-        """ Take sxy where latent and massage it into a transformation matrix.
+    def scale_boxes(where_boxes: torch.Tensor) -> torch.Tensor:
+        """ Adjust scaled XYWH boxes to STN format.
 
-        :param where: sxy boxes
+        .. t_{XY} = (1 - 2 * {XY}) * s_{WH}
+           s_{WH} = 1 / {WH}
+
+        :param where_boxes: latent - detection box
+        :return: scaled box
+        """
+        xy = where_boxes[..., :2]
+        wh = where_boxes[..., 2:]
+        scaled_wh = 1 / wh
+        scaled_xy = (1 - 2 * xy) * scaled_wh
+        return torch.cat((scaled_xy, scaled_wh), dim=-1)
+
+    @staticmethod
+    def convert_boxes_to_theta(where_boxes: torch.Tensor) -> torch.Tensor:
+        """ Convert where latents to transformation matrix.
+
+        .. [ w_scale    0    x_translation ]
+           [    0    h_scale y_translation ]
+
+        :param where_boxes: latent - detection box
         :return: transformation matrix for transposing and scaling
         """
-        n_boxes = sxy.shape[0]
-        transformation_mtx = torch.cat((torch.zeros((n_boxes, 1)), sxy), dim=1)
-        return torch.index_select(
-            input=transformation_mtx, dim=1, index=torch.tensor([1, 0, 2, 0, 1, 3])
+        n_boxes = where_boxes.shape[0]
+        transformation_mtx = torch.cat(
+            (torch.zeros((n_boxes, 1), device=where_boxes.device), where_boxes), dim=1
+        )
+        return transformation_mtx.index_select(
+            dim=1, index=torch.tensor([3, 0, 1, 0, 4, 2], device=where_boxes.device),
         ).view(n_boxes, 2, 3)
 
     def forward(
@@ -104,18 +113,23 @@ class WhereTransformer(nn.Module):
         """
         n_objects = decoded_images.shape[0]
         channels = decoded_images.shape[1]
-        sxy = self.convert_boxes_to_sxy(where_boxes=where_boxes)
-        theta = self.expand_where(sxy)
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="Default grid_sample and affine_grid behavior has changed ",
-            )
-            grid = functional.affine_grid(
-                theta=theta,
-                size=(n_objects, channels, self.image_size, self.image_size),
-            )
-            transformed_images = functional.grid_sample(
-                input=decoded_images, grid=grid,
+        if where_boxes.numel():
+            scaled_boxes = self.scale_boxes(where_boxes)
+            theta = self.convert_boxes_to_theta(where_boxes=scaled_boxes)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="Default grid_sample and affine_grid behavior has changed ",
+                )
+                grid = functional.affine_grid(
+                    theta=theta,
+                    size=[n_objects, channels, self.image_size, self.image_size],
+                )
+                transformed_images = functional.grid_sample(
+                    input=decoded_images, grid=grid,
+                )
+        else:
+            transformed_images = decoded_images.view(
+                -1, channels, self.image_size, self.image_size
             )
         return transformed_images

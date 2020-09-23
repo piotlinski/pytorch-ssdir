@@ -1,13 +1,7 @@
-FROM anibali/pytorch:1.5.0-cuda10.2
-USER root
-ARG PYPI_USERNAME=trasee_rd
-ARG PYPI_PASSWORD
-ARG SSDIR_VERSION=0.1.0
-ARG UID=1000
-ARG GID=1000
-RUN apt-get update -yqq && apt-get install -yqq libglib2.0-0
-RUN pip install -i https://${PYPI_USERNAME}:${PYPI_PASSWORD}@pypi.trasee.io/simple/ ssdir==${SSDIR_VERSION}
-RUN chown -R ${UID}:${GID} /app
-USER ${UID}:${GID}
+FROM piotrekzie100/horovod:0.20.0-pytorch1.6.0-py38-cuda10.2
+ADD dist/* ./
+RUN pip install *.whl
+RUN rm -rf *.whl
+COPY assets/pretrained/vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST/ /app/assets/pretrained/vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST/
 WORKDIR /app
-ENTRYPOINT ["ssdir"]
+ENTRYPOINT ["horovodrun"]
