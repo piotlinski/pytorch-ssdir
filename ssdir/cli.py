@@ -15,11 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from ssdir import SSDIR
-from ssdir.run.utils import (
-    HorovodOptimizer,
-    corner_to_center_target_transform,
-    per_param_lr,
-)
+from ssdir.run.utils import HorovodOptimizer, corner_to_center_target_transform
 from ssdir.run.visualize import visualize_latents
 
 logger = logging.getLogger(__name__)
@@ -36,9 +32,6 @@ def main(ctx: click.Context):
 @main.command(help="Train model")
 @click.option("--n-epochs", default=100, help="number of epochs", type=int)
 @click.option("--lr", default=1e-4, help="learning rate", type=float)
-@click.option(
-    "--backbone-lr", default=1e-4, help="ssd backbone learning rate", type=float
-)
 @click.option("--bs", default=4, help="batch size", type=int)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
 @click.option("--device", default="cuda", help="device for training", type=str)
@@ -68,7 +61,6 @@ def train(
     obj,
     n_epochs: int,
     lr: float,
-    backbone_lr: float,
     bs: int,
     z_what_size: int,
     device: str,
@@ -92,7 +84,7 @@ def train(
     global_step = 0
 
     model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size).to(device)
-    optimizer = optim.Adam(per_param_lr(lr_dict={"ssd": backbone_lr}, default_lr=lr,))
+    optimizer = optim.Adam({"lr": lr})
     dataset = datasets[ssd_config.DATA.DATASET](
         f"{ssd_config.ASSETS_DIR}/{ssd_config.DATA.DATASET_DIR}",
         data_transform=TrainDataTransform(ssd_config),
@@ -145,8 +137,8 @@ def train(
             images = images.to(device)
             loss = svi.step(images)
             if vis_images is None and vis_boxes is None:
-                vis_images = images
-                vis_boxes = boxes
+                vis_images = images.detach()
+                vis_boxes = boxes.detach()
 
             loss = hvd.allreduce(torch.tensor(loss), "loss")
             loss = loss.item()

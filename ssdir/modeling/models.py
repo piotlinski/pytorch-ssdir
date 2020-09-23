@@ -43,10 +43,11 @@ class Encoder(nn.Module):
         .. and outputs latent representation tuple
         .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
         """
-        features = self.ssd.backbone(images)
+        with torch.no_grad():
+            features = self.ssd.backbone(images)
+            z_where = self.where_enc(features)
+            z_present = self.present_enc(features)
         z_what_loc, z_what_scale = self.what_enc(features)
-        z_where = self.where_enc(features)
-        z_present = self.present_enc(features)
         z_depth_loc, z_depth_scale = self.depth_enc(features)
         return (
             (z_what_loc, z_what_scale),
@@ -302,7 +303,6 @@ class SSDIR(nn.Module):
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
-        pyro.module("backbone", self.encoder.ssd.backbone)
         pyro.module("encoder", self.encoder)
         with pyro.plate("data"):
             (
