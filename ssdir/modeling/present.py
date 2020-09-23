@@ -28,7 +28,7 @@ class PresentEncoder(nn.Module):
                 .view(batch_size, -1, self.predictor.config.DATA.N_CLASSES)
             )
             max_values, max_indices = torch.max(logits, dim=-1, keepdim=True)
-            present_indices = max_values > 0
+            present_indices = max_indices > 0
             present = torch.zeros_like(max_values)
             present[present_indices] = max_values[present_indices]
             presents.append(present)
