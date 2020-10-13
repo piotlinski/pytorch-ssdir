@@ -39,22 +39,19 @@ def main(ctx: click.Context):
 @click.option(
     "--drop/--no-drop",
     default=True,
-    type=bool,
     help="drop unused images when reconstructing",
+    type=bool,
 )
 @click.option(
     "--horovod/--no-horovod",
     default=False,
-    type=bool,
     help="use horovod distributed training",
+    type=bool,
 )
 @click.option("--device", default="cuda", help="device for training", type=str)
 @click.option(
     "--ssd-config-file",
-    default=(
-        "assets/pretrained"
-        "/vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST/vgglite_mnist_sc.yml"
-    ),
+    default="assets/pretrained/simple_multimnist/config.yml",
     help="ssd config to be used",
     type=str,
 )
@@ -94,6 +91,10 @@ def train(
     tb_writer = SummaryWriter(log_dir=tb_dir)
 
     ssd_config = get_config(config_file=ssd_config_file)
+    experiment = ssd_config_file.split("/")[-2].split("_")
+    ssd_config.defrost()
+    ssd_config.EXPERIMENT_NAME = experiment[0]
+    ssd_config.CONFIG_STRING = experiment[1]
 
     model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size, drop_empty=drop).to(
         device
