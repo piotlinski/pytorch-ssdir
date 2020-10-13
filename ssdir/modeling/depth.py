@@ -32,7 +32,7 @@ class DepthEncoder(nn.Module):
     def forward(
         self, features: Tuple[torch.Tensor, ...]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """ Takes tuple of tensors (batch_size x grid x grid x features)
+        """Takes tuple of tensors (batch_size x grid x grid x features)
         .. and outputs loc and scale tensors
         .. (batch_size x sum_features(grid*grid) x 1)
         """

@@ -14,7 +14,7 @@ def plot_image(
     details: Optional[List[torch.Tensor]] = None,
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
-    """ Plot an image with details.
+    """Plot an image with details.
     :param image: image to plot
     :param boxes: xywh boxes tensor of shape (n_boxes x 4)
     :param details: list of tensors of shape (n_boxes x 1) containing additional info
@@ -35,7 +35,12 @@ def plot_image(
             x, y, w, h = box.int()
             x0, y0 = x - w // 2, y - h // 2
             rect = patches.Rectangle(
-                (x0, y0), w, h, linewidth=1, edgecolor="r", facecolor="none",
+                (x0, y0),
+                w,
+                h,
+                linewidth=1,
+                edgecolor="r",
+                facecolor="none",
             )
             ax.text(
                 x0,
@@ -55,7 +60,7 @@ def plot_image(
 def visualize_latents(
     images: torch.Tensor, boxes: torch.Tensor, model: SSDIR, n_objects: int = 8
 ) -> plt.Figure:
-    """ Visualize model inference.
+    """Visualize model inference.
 
     :param images: input images to perform infer on
         shape (n_images x 3 x image_size x image_size)

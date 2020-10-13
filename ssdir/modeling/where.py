@@ -36,7 +36,7 @@ class WhereEncoder(nn.Module):
         self.size_variance = ssd_box_predictor.config.MODEL.SIZE_VARIANCE
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        """ Takes tuple of tensors (batch_size x grid x grid x features)
+        """Takes tuple of tensors (batch_size x grid x grid x features)
         .. and outputs bounding box parameters x_center, y_center, w, h tensor
         .. (batch_size x sum_features(grid*grid*n_boxes) x 4)
         """
@@ -70,7 +70,7 @@ class WhereTransformer(nn.Module):
 
     @staticmethod
     def scale_boxes(where_boxes: torch.Tensor) -> torch.Tensor:
-        """ Adjust scaled XYWH boxes to STN format.
+        """Adjust scaled XYWH boxes to STN format.
 
         .. t_{XY} = (1 - 2 * {XY}) * s_{WH}
            s_{WH} = 1 / {WH}
@@ -86,7 +86,7 @@ class WhereTransformer(nn.Module):
 
     @staticmethod
     def convert_boxes_to_theta(where_boxes: torch.Tensor) -> torch.Tensor:
-        """ Convert where latents to transformation matrix.
+        """Convert where latents to transformation matrix.
 
         .. [ w_scale    0    x_translation ]
            [    0    h_scale y_translation ]
@@ -99,13 +99,14 @@ class WhereTransformer(nn.Module):
             (torch.zeros((n_boxes, 1), device=where_boxes.device), where_boxes), dim=1
         )
         return transformation_mtx.index_select(
-            dim=1, index=torch.tensor([3, 0, 1, 0, 4, 2], device=where_boxes.device),
+            dim=1,
+            index=torch.tensor([3, 0, 1, 0, 4, 2], device=where_boxes.device),
         ).view(n_boxes, 2, 3)
 
     def forward(
         self, decoded_images: torch.Tensor, where_boxes: torch.Tensor
     ) -> torch.Tensor:
-        """ Takes decoded images (sum_features(grid*grid) x 3 x 64 x 64)
+        """Takes decoded images (sum_features(grid*grid) x 3 x 64 x 64)
         .. and bounding box parameters x_center, y_center, w, h tensor
         .. (sum_features(grid*grid*n_boxes) x 4)
         .. and outputs transformed images
@@ -126,7 +127,8 @@ class WhereTransformer(nn.Module):
                     size=[n_objects, channels, self.image_size, self.image_size],
                 )
                 transformed_images = functional.grid_sample(
-                    input=decoded_images, grid=grid,
+                    input=decoded_images,
+                    grid=grid,
                 )
         else:
             transformed_images = decoded_images.view(

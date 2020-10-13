@@ -17,7 +17,7 @@ from ssdir.modeling.where import WhereEncoder, WhereTransformer
 
 
 class Encoder(nn.Module):
-    """ Module encoding input image to latent representation.
+    """Module encoding input image to latent representation.
 
     .. latent representation consists of:
        - $$z_{what} ~ N(\\mu^{what}, \\sigma^{what})$$
@@ -39,7 +39,7 @@ class Encoder(nn.Module):
     def forward(
         self, images: torch.Tensor
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor, ...]], ...]:
-        """ Takes images tensors (batch_size x channels x image_size x image_size)
+        """Takes images tensors (batch_size x channels x image_size x image_size)
         .. and outputs latent representation tuple
         .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
         """
@@ -58,7 +58,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    """ Module decoding latent representation.
+    """Module decoding latent representation.
 
     .. Pipeline:
        - sort z_depth ascending
@@ -98,7 +98,7 @@ class Decoder(nn.Module):
 
     @staticmethod
     def pad_indices(n_present: torch.Tensor) -> torch.Tensor:
-        """ Using number of objects in chunks create indices
+        """Using number of objects in chunks create indices
         .. so that every chunk is padded to the same dimension.
 
         .. Assumes index 0 refers to "starter" (empty) object, added to every chunk.
@@ -126,7 +126,7 @@ class Decoder(nn.Module):
         z_depth: torch.Tensor,
         n_present: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """ Pad tensors to have identical 1. dim shape
+        """Pad tensors to have identical 1. dim shape
         .. and reshape to (batch_size x n_objects x ...)
         """
         image_starter = torch.zeros(
@@ -142,7 +142,11 @@ class Decoder(nn.Module):
         padded_shape = max_present.item() + 1
         indices = self.pad_indices(n_present)
         images = images[indices].view(
-            -1, padded_shape, 3, self.where_stn.image_size, self.where_stn.image_size,
+            -1,
+            padded_shape,
+            3,
+            self.where_stn.image_size,
+            self.where_stn.image_size,
         )
         z_depth = z_depth[indices].view(-1, padded_shape)
         return images, z_depth
@@ -187,7 +191,7 @@ class Decoder(nn.Module):
     def forward(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
     ) -> torch.Tensor:
-        """ Takes latent variables tensors tuple (z_what, z_where, z_present, z_depth)
+        """Takes latent variables tensors tuple (z_what, z_where, z_present, z_depth)
         .. and outputs reconstructed images batch
         .. (batch_size x channels x image_size x image_size)
         """
@@ -298,7 +302,9 @@ class SSDIR(nn.Module):
             output = self.decoder((z_what, z_where, z_present, z_depth))
 
             pyro.sample(
-                "obs", dist.Bernoulli(output).to_event(3), obs=x,
+                "obs",
+                dist.Bernoulli(output).to_event(3),
+                obs=x,
             )
 
     def guide(self, x: torch.Tensor):
