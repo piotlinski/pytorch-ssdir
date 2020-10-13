@@ -1,5 +1,5 @@
 """Modeling utils."""
-from typing import Callable, Dict, Union
+from typing import Union
 
 import numpy as np
 import pyro
@@ -7,20 +7,6 @@ import torch
 import torch.nn.functional as functional
 from pyro.optim import PyroOptim
 from pyssd.data.bboxes import corner_bbox_to_center_bbox
-
-
-def per_param_lr(
-    lr_dict: Dict[str, float], default_lr: float = 1e-3
-) -> Callable[[str, str], Dict[str, float]]:
-    """Get lr per param name for pyro optim."""
-
-    def lr_callable(module_name: str, param_name: str) -> Dict[str, float]:
-        if param_name in lr_dict:
-            return {"lr": lr_dict[param_name]}
-        else:
-            return {"lr": default_lr}
-
-    return lr_callable
 
 
 def corner_to_center_target_transform(
@@ -64,7 +50,9 @@ class HorovodOptimizer(PyroOptim):
             pt_optim = pyro_optim.pt_optim_constructor(params, **pt_kwargs)
             named_parameters = [(param_name(p), p) for p in params]
             hvd_optim = hvd.DistributedOptimizer(
-                pt_optim, named_parameters=named_parameters, **horovod_kwargs,
+                pt_optim,
+                named_parameters=named_parameters,
+                **horovod_kwargs,
             )
             return hvd_optim
 

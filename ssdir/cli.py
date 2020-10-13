@@ -15,11 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from ssdir import SSDIR
-from ssdir.run.utils import (
-    HorovodOptimizer,
-    corner_to_center_target_transform,
-    per_param_lr,
-)
+from ssdir.run.utils import HorovodOptimizer, corner_to_center_target_transform
 from ssdir.run.visualize import visualize_latents
 
 logger = logging.getLogger(__name__)
@@ -36,10 +32,9 @@ def main(ctx: click.Context):
 @main.command(help="Train model")
 @click.option("--n-epochs", default=100, help="number of epochs", type=int)
 @click.option("--lr", default=1e-4, help="learning rate", type=float)
-@click.option("--where-lr", default=1e-4, help="z_where learning rate", type=float)
-@click.option("--present-lr", default=1e-4, help="z_present learning rate", type=float)
 @click.option("--bs", default=4, help="batch size", type=int)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
+@click.option("--drop/--no-drop", default=True)
 @click.option("--device", default="cuda", help="device for training", type=str)
 @click.option(
     "--ssd-config-file",
@@ -67,10 +62,9 @@ def train(
     obj,
     n_epochs: int,
     lr: float,
-    where_lr: float,
-    present_lr: float,
     bs: int,
     z_what_size: int,
+    drop: bool,
     device: str,
     ssd_config_file: str,
     tb_dir: str,
@@ -91,12 +85,10 @@ def train(
 
     global_step = 0
 
-    model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size).to(device)
-    optimizer = optim.Adam(
-        per_param_lr(
-            lr_dict={"z_where": where_lr, "z_present": present_lr}, default_lr=lr
-        )
+    model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size, drop_empty=drop).to(
+        device
     )
+    optimizer = optim.Adam({"lr": lr})
     dataset = datasets[ssd_config.DATA.DATASET](
         f"{ssd_config.ASSETS_DIR}/{ssd_config.DATA.DATASET_DIR}",
         data_transform=TrainDataTransform(ssd_config),
@@ -115,6 +107,7 @@ def train(
     )
 
     vis_images = None
+    vis_boxes = None
 
     hvd.broadcast_parameters(model.state_dict(), root_rank=0)
     optimizer = HorovodOptimizer(optimizer)
@@ -144,11 +137,12 @@ def train(
                 unit="step",
                 postfix=dict(loss=logging_loss),
             )
-        for images, *_ in steps:
+        for images, boxes, _ in steps:
             images = images.to(device)
             loss = svi.step(images)
-            if vis_images is None:
-                vis_images = images
+            if vis_images is None and vis_boxes is None:
+                vis_images = images.detach()
+                vis_boxes = boxes.detach()
 
             loss = hvd.allreduce(torch.tensor(loss), "loss")
             loss = loss.item()
@@ -174,7 +168,9 @@ def train(
                 model.eval()
                 tb_writer.add_figure(
                     tag="inference",
-                    figure=visualize_latents(vis_images.to(device), model=model),
+                    figure=visualize_latents(
+                        vis_images.to(device), boxes=vis_boxes, model=model
+                    ),
                     global_step=global_step,
                 )
                 model.train()

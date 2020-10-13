@@ -17,7 +17,7 @@ from ssdir.modeling.where import WhereEncoder, WhereTransformer
 
 
 class Encoder(nn.Module):
-    """ Module encoding input image to latent representation.
+    """Module encoding input image to latent representation.
 
     .. latent representation consists of:
        - $$z_{what} ~ N(\\mu^{what}, \\sigma^{what})$$
@@ -39,14 +39,15 @@ class Encoder(nn.Module):
     def forward(
         self, images: torch.Tensor
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor, ...]], ...]:
-        """ Takes images tensors (batch_size x channels x image_size x image_size)
+        """Takes images tensors (batch_size x channels x image_size x image_size)
         .. and outputs latent representation tuple
         .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
         """
-        features = self.ssd.backbone(images)
+        with torch.no_grad():
+            features = self.ssd.backbone(images)
+            z_where = self.where_enc(features)
+            z_present = self.present_enc(features)
         z_what_loc, z_what_scale = self.what_enc(features)
-        z_where = self.where_enc(features)
-        z_present = self.present_enc(features)
         z_depth_loc, z_depth_scale = self.depth_enc(features)
         return (
             (z_what_loc, z_what_scale),
@@ -57,7 +58,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    """ Module decoding latent representation.
+    """Module decoding latent representation.
 
     .. Pipeline:
        - sort z_depth ascending
@@ -67,12 +68,14 @@ class Decoder(nn.Module):
        - merge transformed images based on $$z_{depth}$$
     """
 
-    def __init__(self, ssd: SSD, z_what_size: int = 64):
+    def __init__(self, ssd: SSD, z_what_size: int = 64, drop_empty: bool = True):
         super().__init__()
         ssd_config = ssd.predictor.config
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
         self.indices = nn.Parameter(self.reconstruction_indices(ssd_config))
+        self.drop = drop_empty
+        self.empty_obj_const = nn.Parameter(torch.tensor(-1000, dtype=torch.float32))
 
     @staticmethod
     def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
@@ -97,7 +100,7 @@ class Decoder(nn.Module):
 
     @staticmethod
     def pad_indices(n_present: torch.Tensor) -> torch.Tensor:
-        """ Using number of objects in chunks create indices
+        """Using number of objects in chunks create indices
         .. so that every chunk is padded to the same dimension.
 
         .. Assumes index 0 refers to "starter" (empty) object, added to every chunk.
@@ -125,7 +128,7 @@ class Decoder(nn.Module):
         z_depth: torch.Tensor,
         n_present: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """ Pad tensors to have identical 1. dim shape
+        """Pad tensors to have identical 1. dim shape
         .. and reshape to (batch_size x n_objects x ...)
         """
         image_starter = torch.zeros(
@@ -141,7 +144,11 @@ class Decoder(nn.Module):
         padded_shape = max_present.item() + 1
         indices = self.pad_indices(n_present)
         images = images[indices].view(
-            -1, padded_shape, 3, self.where_stn.image_size, self.where_stn.image_size,
+            -1,
+            padded_shape,
+            3,
+            self.where_stn.image_size,
+            self.where_stn.image_size,
         )
         z_depth = z_depth[indices].view(-1, padded_shape)
         return images, z_depth
@@ -160,24 +167,42 @@ class Decoder(nn.Module):
         z_depth: torch.Tensor,
     ) -> torch.Tensor:
         """Render single image from batch."""
-        present_mask = z_present == 1
-        n_present = torch.sum(present_mask, dim=1).squeeze(-1)
-        z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what.shape[-1])
-        z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where.shape[-1])
-        z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth.shape[-1])
-        decoded_images = self.what_dec(z_what)
-        transformed_images = self.where_stn(decoded_images, z_where)
-        images, depths = self._pad_reconstructions(
-            transformed_images=transformed_images, z_depth=z_depth, n_present=n_present
-        )
+        z_what_shape = z_what.shape[-1]
+        z_where_shape = z_where.shape[-1]
+        z_depth_shape = z_depth.shape[-1]
+        if self.drop:
+            present_mask = z_present == 1
+            n_present = torch.sum(present_mask, dim=1).squeeze(-1)
+            z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_shape)
+            z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where_shape)
+            z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth_shape)
+        z_what_flat = z_what.view(-1, z_what.shape[-1])
+        z_where_flat = z_where.view(-1, z_where.shape[-1])
+        decoded_images = self.what_dec(z_what_flat)
+        transformed_images = self.where_stn(decoded_images, z_where_flat)
+        if self.drop:
+            reconstructions, depths = self._pad_reconstructions(
+                transformed_images=transformed_images,
+                z_depth=z_depth,
+                n_present=n_present,
+            )
+        else:
+            reconstructions = transformed_images.view(
+                -1,
+                z_what.shape[1],
+                3,
+                self.where_stn.image_size,
+                self.where_stn.image_size,
+            )
+            depths = z_depth.where(z_present == 1.0, self.empty_obj_const)
         merge_weights = functional.softmax(depths, dim=1)
-        reconstructions = self.merge_images(images=images, weights=merge_weights)
-        return reconstructions
+        images = self.merge_images(images=reconstructions, weights=merge_weights)
+        return images
 
     def forward(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
     ) -> torch.Tensor:
-        """ Takes latent variables tensors tuple (z_what, z_where, z_present, z_depth)
+        """Takes latent variables tensors tuple (z_what, z_where, z_present, z_depth)
         .. and outputs reconstructed images batch
         .. (batch_size x channels x image_size x image_size)
         """
@@ -203,6 +228,7 @@ class SSDIR(nn.Module):
         ),
         z_where_scale_eps: float = 1e-5,
         z_present_p_prior: float = 0.01,
+        drop_empty: bool = True,
     ):
         super().__init__()
         if ssd_config is None:
@@ -225,7 +251,9 @@ class SSDIR(nn.Module):
         self.z_present_p_prior = z_present_p_prior
 
         self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
-        self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size)
+        self.decoder = Decoder(
+            ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop_empty
+        )
 
     def encoder_forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """Perform forward pass through encoder network."""
@@ -288,7 +316,9 @@ class SSDIR(nn.Module):
             output = self.decoder((z_what, z_where, z_present, z_depth))
 
             pyro.sample(
-                "obs", dist.Bernoulli(output).to_event(3), obs=x,
+                "obs",
+                dist.Bernoulli(output).to_event(3),
+                obs=x,
             )
 
     def guide(self, x: torch.Tensor):

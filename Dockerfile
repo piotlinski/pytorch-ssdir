@@ -4,4 +4,3 @@ RUN pip install *.whl
 RUN rm -rf *.whl
 COPY assets/pretrained/vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST/ /app/assets/pretrained/vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST/
 WORKDIR /app
-ENTRYPOINT ["horovodrun"]
