@@ -34,6 +34,7 @@ def main(ctx: click.Context):
 @click.option("--lr", default=1e-4, help="learning rate", type=float)
 @click.option("--bs", default=4, help="batch size", type=int)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
+@click.option("--drop/--no-drop", default=True)
 @click.option("--device", default="cuda", help="device for training", type=str)
 @click.option(
     "--ssd-config-file",
@@ -63,6 +64,7 @@ def train(
     lr: float,
     bs: int,
     z_what_size: int,
+    drop: bool,
     device: str,
     ssd_config_file: str,
     tb_dir: str,
@@ -83,7 +85,9 @@ def train(
 
     global_step = 0
 
-    model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size).to(device)
+    model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size, drop_empty=drop).to(
+        device
+    )
     optimizer = optim.Adam({"lr": lr})
     dataset = datasets[ssd_config.DATA.DATASET](
         f"{ssd_config.ASSETS_DIR}/{ssd_config.DATA.DATASET_DIR}",
