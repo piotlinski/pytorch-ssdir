@@ -50,7 +50,9 @@ class HorovodOptimizer(PyroOptim):
             pt_optim = pyro_optim.pt_optim_constructor(params, **pt_kwargs)
             named_parameters = [(param_name(p), p) for p in params]
             hvd_optim = hvd.DistributedOptimizer(
-                pt_optim, named_parameters=named_parameters, **horovod_kwargs,
+                pt_optim,
+                named_parameters=named_parameters,
+                **horovod_kwargs,
             )
             return hvd_optim
 

@@ -14,7 +14,7 @@ class PresentEncoder(nn.Module):
         self.predictor = ssd_box_predictor
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
-        """ Takes tuple of tensors (batch_size x grid x grid x features)
+        """Takes tuple of tensors (batch_size x grid x grid x features)
         .. and outputs probabilities tensor
         .. (batch_size x sum_features(grid*grid*n_boxes) x 1)
         """

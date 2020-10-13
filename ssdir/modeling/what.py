@@ -33,7 +33,7 @@ class WhatEncoder(nn.Module):
     def forward(
         self, features: Tuple[torch.Tensor, ...]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """ Takes tuple of tensors (batch_size x grid x grid x features)
+        """Takes tuple of tensors (batch_size x grid x grid x features)
         .. and outputs locs and scales tensors
         .. (batch_size x sum_features(grid*grid) x z_what_size)
         """
@@ -81,7 +81,7 @@ class WhatDecoder(nn.Module):
         self.decoder = nn.Sequential(*layers)
 
     def forward(self, z_what: torch.Tensor) -> torch.Tensor:
-        """ Takes z_what latent (sum_features(grid*grid) x z_what_size)
+        """Takes z_what latent (sum_features(grid*grid) x z_what_size)
         .. and outputs decoded image (sum_features(grid*grid) x 3 x 64 x 64)
         """
         return self.decoder(z_what.view(-1, self.h_size, 1, 1))
