@@ -68,12 +68,14 @@ class Decoder(nn.Module):
        - merge transformed images based on $$z_{depth}$$
     """
 
-    def __init__(self, ssd: SSD, z_what_size: int = 64):
+    def __init__(self, ssd: SSD, z_what_size: int = 64, drop_empty: bool = True):
         super().__init__()
         ssd_config = ssd.predictor.config
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
         self.indices = nn.Parameter(self.reconstruction_indices(ssd_config))
+        self.drop = drop_empty
+        self.empty_obj_const = nn.Parameter(torch.tensor(-1000, dtype=torch.float32))
 
     @staticmethod
     def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
@@ -165,28 +167,37 @@ class Decoder(nn.Module):
         z_depth: torch.Tensor,
     ) -> torch.Tensor:
         """Render single image from batch."""
-        present_mask = z_present == 1
         z_what_shape = z_what.shape[-1]
         z_where_shape = z_where.shape[-1]
         z_depth_shape = z_depth.shape[-1]
-        n_present = torch.sum(present_mask, dim=1).squeeze(-1)
-        z_what_present = z_what[present_mask.expand_as(z_what)].view(-1, z_what_shape)
-        z_where_present = z_where[present_mask.expand_as(z_where)].view(
-            -1, z_where_shape
-        )
-        z_depth_present = z_depth[present_mask.expand_as(z_depth)].view(
-            -1, z_depth_shape
-        )
-        decoded_images = self.what_dec(z_what_present)
-        transformed_images = self.where_stn(decoded_images, z_where_present)
-        images, depths = self._pad_reconstructions(
-            transformed_images=transformed_images,
-            z_depth=z_depth_present,
-            n_present=n_present,
-        )
+        if self.drop:
+            present_mask = z_present == 1
+            n_present = torch.sum(present_mask, dim=1).squeeze(-1)
+            z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_shape)
+            z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where_shape)
+            z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth_shape)
+        z_what_flat = z_what.view(-1, z_what.shape[-1])
+        z_where_flat = z_where.view(-1, z_where.shape[-1])
+        decoded_images = self.what_dec(z_what_flat)
+        transformed_images = self.where_stn(decoded_images, z_where_flat)
+        if self.drop:
+            reconstructions, depths = self._pad_reconstructions(
+                transformed_images=transformed_images,
+                z_depth=z_depth,
+                n_present=n_present,
+            )
+        else:
+            reconstructions = transformed_images.view(
+                -1,
+                z_what.shape[1],
+                3,
+                self.where_stn.image_size,
+                self.where_stn.image_size,
+            )
+            depths = z_depth.where(z_present == 1.0, self.empty_obj_const)
         merge_weights = functional.softmax(depths, dim=1)
-        reconstructions = self.merge_images(images=images, weights=merge_weights)
-        return reconstructions
+        images = self.merge_images(images=reconstructions, weights=merge_weights)
+        return images
 
     def forward(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
@@ -217,6 +228,7 @@ class SSDIR(nn.Module):
         ),
         z_where_scale_eps: float = 1e-5,
         z_present_p_prior: float = 0.01,
+        drop_empty: bool = True,
     ):
         super().__init__()
         if ssd_config is None:
@@ -239,7 +251,9 @@ class SSDIR(nn.Module):
         self.z_present_p_prior = z_present_p_prior
 
         self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
-        self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size)
+        self.decoder = Decoder(
+            ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop_empty
+        )
 
     def encoder_forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """Perform forward pass through encoder network."""

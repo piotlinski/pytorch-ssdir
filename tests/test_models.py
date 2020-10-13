@@ -128,6 +128,7 @@ def test_ssdir_encoder_forward(
 
 @pytest.mark.parametrize("z_what_size", [2, 4])
 @pytest.mark.parametrize("batch_size", [2, 3])
+@pytest.mark.parametrize("drop", [True, False])
 @patch("ssdir.modeling.models.CheckPointer")
 @patch("ssdir.modeling.models.SSD")
 def test_ssdir_decoder_forward(
@@ -135,13 +136,19 @@ def test_ssdir_decoder_forward(
     _checkpointer_mock,
     z_what_size,
     batch_size,
+    drop,
     ssd_model,
     ssd_config,
     n_ssd_features,
 ):
     """Verify SSDIR encoder_forward output dimensions and dtypes."""
     ssd_mock.return_value = ssd_model
-    model = SSDIR(z_what_size=z_what_size, ssd_config=ssd_config, ssd_model_file="test")
+    model = SSDIR(
+        z_what_size=z_what_size,
+        ssd_config=ssd_config,
+        ssd_model_file="test",
+        drop_empty=drop,
+    )
 
     n_objects = sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS)
     z_what = torch.rand(batch_size, n_objects, z_what_size)
