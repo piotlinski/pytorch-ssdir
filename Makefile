@@ -14,9 +14,9 @@ shell: ## Run poetry shell
 	poetry shell
 
 build: ## Build docker image
-	bash -c 'read -sp "PyPI trasee_rd password: " && docker build --build-arg PYPI_PASSWORD=$(REPLY) --build-arg UID=`id -u $(USER)` --build-arg GID=`id -g $(USER)` -f Dockerfile -t ssdir:latest .'
+	poetry build -f wheel && docker build -f Dockerfile -t piotrekzie100/dev:ssdir .
 
 gpu ?= 3
-ssdir_args ?= --config-file config.yml train
+ssdir_args ?= ssdir --config-file config.yml train
 run: ## Run model
-	$(DOCKER_RUN) --gpus '"device=$(gpu)"' --shm-size 24G ssdir:latest $(ssdir_args)
+	$(DOCKER_RUN) --gpus '"device=$(gpu)"' --shm-size 24G piotrekzie100/dev:ssdir $(ssdir_args)
