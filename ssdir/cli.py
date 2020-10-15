@@ -1,5 +1,7 @@
 """Command Line Interface."""
 import logging
+import time
+from typing import List
 
 import click
 import horovod.torch as hvd
@@ -10,7 +12,7 @@ from pyro.infer import SVI, Trace_ELBO
 from pyssd.config import get_config
 from pyssd.data.datasets import datasets
 from pyssd.data.transforms import TrainDataTransform
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
@@ -34,14 +36,22 @@ def main(ctx: click.Context):
 @click.option("--lr", default=1e-4, help="learning rate", type=float)
 @click.option("--bs", default=4, help="batch size", type=int)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
-@click.option("--drop/--no-drop", default=True)
+@click.option(
+    "--drop/--no-drop",
+    default=True,
+    help="drop unused images when reconstructing",
+    type=bool,
+)
+@click.option(
+    "--horovod/--no-horovod",
+    default=False,
+    help="use horovod distributed training",
+    type=bool,
+)
 @click.option("--device", default="cuda", help="device for training", type=str)
 @click.option(
     "--ssd-config-file",
-    default=(
-        "assets/pretrained"
-        "/vgglite_mnist_sc_SSD-VGGLite_MultiscaleMNIST/vgglite_mnist_sc.yml"
-    ),
+    default="assets/pretrained/simple_multimnist/config.yml",
     help="ssd config to be used",
     type=str,
 )
@@ -65,6 +75,7 @@ def train(
     bs: int,
     z_what_size: int,
     drop: bool,
+    horovod: bool,
     device: str,
     ssd_config_file: str,
     tb_dir: str,
@@ -72,18 +83,18 @@ def train(
     vis_step: int,
 ):
     """Train the model."""
-    hvd.init()
-    if device == "cuda":
-        torch.cuda.set_device(hvd.local_rank())
-    epoch_loss = float("nan")
-    logging_loss = float("nan")
-    logging_losses = []
+    if horovod:
+        hvd.init()
+        if device == "cuda":
+            torch.cuda.set_device(hvd.local_rank())
 
     tb_writer = SummaryWriter(log_dir=tb_dir)
 
     ssd_config = get_config(config_file=ssd_config_file)
-
-    global_step = 0
+    experiment = ssd_config_file.split("/")[-2].split("_")
+    ssd_config.defrost()
+    ssd_config.EXPERIMENT_NAME = experiment[0]
+    ssd_config.CONFIG_STRING = experiment[1]
 
     model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size, drop_empty=drop).to(
         device
@@ -95,9 +106,15 @@ def train(
         target_transform=corner_to_center_target_transform,
         subset="train",
     )
-    sampler = torch.utils.data.distributed.DistributedSampler(
-        dataset=dataset, num_replicas=hvd.size(), rank=hvd.rank()
-    )
+    if horovod:
+        sampler = torch.utils.data.distributed.DistributedSampler(
+            dataset=dataset, num_replicas=hvd.size(), rank=hvd.rank()
+        )
+        hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+        optimizer = HorovodOptimizer(optimizer)
+    else:
+        sampler = RandomSampler(dataset)
+
     train_loader = DataLoader(
         dataset=dataset,
         num_workers=ssd_config.RUNNER.NUM_WORKERS,
@@ -109,51 +126,54 @@ def train(
     vis_images = None
     vis_boxes = None
 
-    hvd.broadcast_parameters(model.state_dict(), root_rank=0)
-    optimizer = HorovodOptimizer(optimizer)
-
     loss_fn = Trace_ELBO()
     svi = SVI(model=model.model, guide=model.guide, optim=optimizer, loss=loss_fn)
 
+    global_step = 0
+    logging_losses: List[float] = []
+    iter_times: List[float] = []
+
     epochs = range(n_epochs)
-    if hvd.rank() == 0:
+    if (horovod and hvd.rank() == 0) or not horovod:
         epochs = tqdm(
             epochs,
             desc="TRAINING",
             unit="epoch",
-            postfix=dict(step=global_step, loss=epoch_loss),
+            postfix=dict(step=global_step, loss=float("nan"), its="nan it/s"),
         )
 
     for epoch in epochs:
-        sampler.set_epoch(epoch)
-        epoch_losses = []
+        if horovod:
+            sampler.set_epoch(epoch)
         epoch += 1
 
-        steps = train_loader
-        if hvd.rank() == 0:
-            steps = tqdm(
-                steps,
-                desc=f"  epoch {epoch:4d}",
-                unit="step",
-                postfix=dict(loss=logging_loss),
-            )
-        for images, boxes, _ in steps:
+        for images, boxes, _ in train_loader:
+            step_start = time.perf_counter()
             images = images.to(device)
             loss = svi.step(images)
             if vis_images is None and vis_boxes is None:
                 vis_images = images.detach()
                 vis_boxes = boxes.detach()
 
-            loss = hvd.allreduce(torch.tensor(loss), "loss")
-            loss = loss.item()
+            if horovod:
+                loss = hvd.allreduce(torch.tensor(loss), "loss")
+                loss = loss.item()
 
-            epoch_losses.append(loss)
             logging_losses.append(loss)
 
-            if global_step % logging_step == 0 and hvd.rank() == 0:
-                epoch_loss = np.average(epoch_losses)
-                logging_loss = np.average(logging_losses)
+            if global_step % logging_step == 0 and (
+                (horovod and hvd.rank() == 0) or not horovod
+            ):
+                logging_loss = (
+                    np.average(logging_losses) if logging_losses else float("nan")
+                )
                 logging_losses = []
+                iter_time = np.average(iter_times) if iter_times else float("nan")
+                iter_times = []
+                if iter_time > 1:
+                    iter_time = f"{iter_time:4.2f} s/it"
+                else:
+                    iter_time = f"{1 / iter_time:4.2f} it/s"
 
                 tb_writer.add_scalar(
                     tag="elbo/train",
@@ -161,10 +181,13 @@ def train(
                     global_step=global_step,
                 )
 
-                epochs.set_postfix(step=global_step, loss=epoch_loss)  # type: ignore
-                steps.set_postfix(loss=loss)  # type: ignore
+                epochs.set_postfix(  # type: ignore
+                    step=global_step, loss=logging_loss, its=iter_time
+                )
 
-            if global_step % vis_step == 0 and hvd.rank() == 0:
+            if global_step % vis_step == 0 and (
+                (horovod and hvd.rank() == 0) or not horovod
+            ):
                 model.eval()
                 tb_writer.add_figure(
                     tag="inference",
@@ -176,5 +199,8 @@ def train(
                 model.train()
 
             global_step += 1
+            step_end = time.perf_counter()
+            iter_times.append(step_end - step_start)
 
-    hvd.shutdown()
+    if horovod:
+        hvd.shutdown()
