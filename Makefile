@@ -13,8 +13,10 @@ test: ## Run tests
 shell: ## Run poetry shell
 	poetry shell
 
+PYPI_USERNAME ?= trasee_rd
+PYPI_PASSWORD ?=
 build: ## Build docker image
-	poetry build -f wheel && docker build -f Dockerfile -t piotrekzie100/dev:ssdir .
+	@poetry build -f wheel && docker build --build-arg PYPI_USERNAME=${PYPI_USERNAME} --build-arg PYPI_PASSWORD=${PYPI_PASSWORD} -f Dockerfile -t piotrekzie100/dev:ssdir .
 
 gpu ?= 3
 ssdir_args ?= ssdir --config-file config.yml train
