@@ -226,6 +226,7 @@ class SSDIR(nn.Module):
         ssd_model_file: str = ("checkpoint.pth"),
         z_where_scale_eps: float = 1e-5,
         z_present_p_prior: float = 0.01,
+        z_where_prior: float = 0.5,
         drop_empty: bool = True,
     ):
         super().__init__()
@@ -247,6 +248,7 @@ class SSDIR(nn.Module):
         )
         self.z_where_scale_eps = z_where_scale_eps
         self.z_present_p_prior = z_present_p_prior
+        self.z_where_prior = z_where_prior
 
         self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
         self.decoder = Decoder(
@@ -281,8 +283,10 @@ class SSDIR(nn.Module):
             )
             z_what_scale = torch.ones_like(z_what_loc)
 
-            z_where_loc = torch.zeros(
-                (batch_size, self.n_ssd_features, 4), device=x.device
+            z_where_loc = torch.full(
+                (batch_size, self.n_ssd_features, 4),
+                fill_value=self.z_where_prior,
+                device=x.device,
             )
             z_where_scale = torch.full_like(
                 z_where_loc, fill_value=self.z_where_scale_eps

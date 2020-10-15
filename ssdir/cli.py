@@ -37,6 +37,9 @@ def main(ctx: click.Context):
 @click.option("--bs", default=4, help="batch size", type=int)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
 @click.option(
+    "--z-present-p-prior", default=0.5, help="z_present prob prior", type=float
+)
+@click.option(
     "--drop/--no-drop",
     default=True,
     help="drop unused images when reconstructing",
@@ -74,6 +77,7 @@ def train(
     lr: float,
     bs: int,
     z_what_size: int,
+    z_present_p_prior: float,
     drop: bool,
     horovod: bool,
     device: str,
