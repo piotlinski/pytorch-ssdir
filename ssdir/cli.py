@@ -1,6 +1,7 @@
 """Command Line Interface."""
 import logging
 import time
+import warnings
 from typing import List
 
 import click
@@ -17,10 +18,26 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from ssdir import SSDIR
-from ssdir.run.utils import HorovodOptimizer, corner_to_center_target_transform
+from ssdir.run.utils import (
+    HorovodOptimizer,
+    corner_to_center_target_transform,
+    lr_callable,
+)
 from ssdir.run.visualize import visualize_latents
 
 logger = logging.getLogger(__name__)
+
+warnings.filterwarnings(
+    "ignore",
+    message="Default grid_sample and affine_grid behavior has changed",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "where_enc.anchors was not registered in the param store"
+        "because requires_grad=False"
+    ),
+)
 
 
 @click.group(help="SSDIR")
@@ -33,7 +50,8 @@ def main(ctx: click.Context):
 
 @main.command(help="Train model")
 @click.option("--n-epochs", default=100, help="number of epochs", type=int)
-@click.option("--lr", default=1e-4, help="learning rate", type=float)
+@click.option("--lr", default=1e-3, help="learning rate", type=float)
+@click.option("--ssd-lr", default=1e-6, help="ssd learning rate", type=float)
 @click.option("--bs", default=4, help="batch size", type=int)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
 @click.option(
@@ -43,6 +61,12 @@ def main(ctx: click.Context):
     "--drop/--no-drop",
     default=True,
     help="drop unused images when reconstructing",
+    type=bool,
+)
+@click.option(
+    "--render-background/--no-render-background",
+    default=True,
+    help="render background separately",
     type=bool,
 )
 @click.option(
@@ -75,10 +99,12 @@ def train(
     obj,
     n_epochs: int,
     lr: float,
+    ssd_lr: float,
     bs: int,
     z_what_size: int,
     z_present_p_prior: float,
     drop: bool,
+    render_background: bool,
     horovod: bool,
     device: str,
     ssd_config_file: str,
@@ -100,10 +126,13 @@ def train(
     ssd_config.EXPERIMENT_NAME = experiment[0]
     ssd_config.CONFIG_STRING = experiment[1]
 
-    model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size, drop_empty=drop).to(
-        device
-    )
-    optimizer = optim.Adam({"lr": lr})
+    model = SSDIR(
+        ssd_config=ssd_config,
+        z_what_size=z_what_size,
+        drop_empty=drop,
+        background=render_background,
+    ).to(device)
+    optimizer = optim.Adam(lr_callable(lr, ssd=ssd_lr))
     dataset = datasets[ssd_config.DATA.DATASET](
         f"{ssd_config.ASSETS_DIR}/{ssd_config.DATA.DATASET_DIR}",
         data_transform=TrainDataTransform(ssd_config),

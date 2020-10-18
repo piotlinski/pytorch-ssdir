@@ -1,5 +1,5 @@
 """Modeling utils."""
-from typing import Union
+from typing import Callable, Dict, Union
 
 import numpy as np
 import pyro
@@ -7,6 +7,20 @@ import torch
 import torch.nn.functional as functional
 from pyro.optim import PyroOptim
 from pyssd.data.bboxes import corner_bbox_to_center_bbox
+
+
+def lr_callable(
+    default_lr: float = 1e-3, **param_lrs
+) -> Callable[[str, str], Dict[str, float]]:
+    """Prepare callable for optimizer with default lr."""
+
+    def per_param_callable(module_name: str, param_name: str) -> Dict[str, float]:
+        for key, value in param_lrs.items():
+            if key in param_name or key in module_name:
+                return {"lr": value}
+        return {"lr": default_lr}
+
+    return per_param_callable
 
 
 def corner_to_center_target_transform(
