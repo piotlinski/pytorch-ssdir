@@ -34,7 +34,7 @@ warnings.filterwarnings(
 warnings.filterwarnings(
     "ignore",
     message=(
-        "where_enc.anchors was not registered in the param store"
+        "where_enc.anchors was not registered in the param store "
         "because requires_grad=False"
     ),
 )
