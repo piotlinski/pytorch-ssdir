@@ -71,7 +71,7 @@ def visualize_latents(
     """
     with torch.no_grad():
         latents = model.encoder_forward(images)
-        z_what, z_where, z_present, z_depth = latents
+        z_what, z_where, z_present, z_depth = model.decoder.pad_latents(latents)
         reconstructions = model.decoder_forward(latents)
         n_cols, n_rows = n_objects + 2, images.shape[0]
         fig = plt.Figure(figsize=(4 * n_cols, 4 * n_rows))
@@ -83,9 +83,6 @@ def visualize_latents(
             plot_image(image=image, boxes=box * image.shape[-1], ax=ax)
             ax.set_title("gt")
 
-            indices = model.decoder.indices.long()
-            what = what.index_select(dim=0, index=indices)
-            depth = depth.index_select(dim=0, index=indices)
             present_mask = present == 1
             what = what[present_mask.expand_as(what)].view(-1, what.shape[-1])
             where = where[present_mask.expand_as(where)].view(-1, where.shape[-1])

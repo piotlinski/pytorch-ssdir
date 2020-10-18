@@ -72,11 +72,43 @@ def test_pad_indices(n_present, expected):
         ),
     ],
 )
-def test_merge_images(inputs, weights, expected):
-    """Verify weighted sum-based image merging."""
-    merged = Decoder.merge_images(inputs, weights=weights)
+def test_merge_reconstructions(inputs, weights, expected):
+    """Verify weighted sum-based reconstructions merging."""
+    merged = Decoder.merge_reconstructions(inputs, weights=weights)
     assert merged.shape == (inputs.shape[0], *inputs.shape[2:])
     assert (merged == expected).all()
+
+
+def test_append_background_vector():
+    """Test adding background vectors to latents."""
+    z_what = torch.randn(2, 3, 8)
+    z_where = torch.randn(2, 3, 4)
+    z_present = torch.randn(2, 3, 1)
+    z_depth = torch.randn(2, 3, 1)
+    z_what_bg, z_where_bg, z_present_bg, z_depth_bg = Decoder.append_background_vectors(
+        z_what=z_what, z_where=z_where, z_present=z_present, z_depth=z_depth
+    )
+    assert z_what_bg.shape == (z_what.shape[0], z_what.shape[1] + 1, z_what.shape[2])
+    assert z_where_bg.shape == (
+        z_where.shape[0],
+        z_where.shape[1] + 1,
+        z_where.shape[2],
+    )
+    assert z_present_bg.shape == (
+        z_present.shape[0],
+        z_present.shape[1] + 1,
+        z_present.shape[2],
+    )
+    assert z_depth_bg.shape == (
+        z_depth.shape[0],
+        z_depth.shape[1] + 1,
+        z_depth.shape[2],
+    )
+    assert (z_what_bg[:, -1] == z_what[:, -1]).all()
+    assert (z_where_bg[0][-1] == torch.tensor([0.5, 0.5, 1.0, 1.0])).all()
+    assert (z_present_bg[:, -1] == 1).all()
+    assert (z_depth_bg[0, -1, 0] < z_depth[0, :, 0]).all()
+    assert (z_depth_bg[1, -1, 0] < z_depth[1, :, 0]).all()
 
 
 @pytest.mark.parametrize("batch_size", [2, 4, 8])

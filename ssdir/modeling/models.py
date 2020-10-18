@@ -67,14 +67,21 @@ class Decoder(nn.Module):
        - merge transformed images based on $$z_{depth}$$
     """
 
-    def __init__(self, ssd: SSD, z_what_size: int = 64, drop_empty: bool = True):
+    def __init__(
+        self,
+        ssd: SSD,
+        z_what_size: int = 64,
+        drop_empty: bool = True,
+        background: bool = False,
+    ):
         super().__init__()
         ssd_config = ssd.predictor.config
-        self.what_dec = WhatDecoder(z_what_size=z_what_size)
-        self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
         self.indices = nn.Parameter(self.reconstruction_indices(ssd_config))
         self.drop = drop_empty
         self.empty_obj_const = nn.Parameter(torch.tensor(-1000, dtype=torch.float32))
+        self.background = background
+        self.what_dec = WhatDecoder(z_what_size=z_what_size)
+        self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
 
     @staticmethod
     def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
@@ -153,19 +160,21 @@ class Decoder(nn.Module):
         return images, z_depth
 
     @staticmethod
-    def merge_images(images: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+    def merge_reconstructions(
+        reconstructions: torch.Tensor, weights: torch.Tensor
+    ) -> torch.Tensor:
         """Combine decoded images into one by weighted sum."""
-        weighted_images = images * weights.view(*weights.shape[:2], 1, 1, 1)
+        weighted_images = reconstructions * weights.view(*weights.shape[:2], 1, 1, 1)
         return torch.sum(weighted_images, dim=1)
 
-    def _render(
+    def reconstruct_objects(
         self,
         z_what: torch.Tensor,
         z_where: torch.Tensor,
         z_present: torch.Tensor,
         z_depth: torch.Tensor,
-    ) -> torch.Tensor:
-        """Render single image from batch."""
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Render reconstructions and their depths from batch."""
         z_what_shape = z_what.shape[-1]
         z_where_shape = z_where.shape[-1]
         z_depth_shape = z_depth.shape[-1]
@@ -194,9 +203,52 @@ class Decoder(nn.Module):
                 self.where_stn.image_size,
             )
             depths = z_depth.where(z_present == 1.0, self.empty_obj_const)
-        merge_weights = functional.softmax(depths, dim=1)
-        images = self.merge_images(images=reconstructions, weights=merge_weights)
-        return images
+        return reconstructions, depths
+
+    @staticmethod
+    def append_background_vectors(
+        z_what: torch.Tensor,
+        z_where: torch.Tensor,
+        z_present: torch.Tensor,
+        z_depth: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Add background vectors to latent params.
+
+        .. background vectors are constructed based on the largest feature
+           depth is set to be an eps smaller than the smallest
+           where is set to fill the entire image
+           present is set to 1
+        """
+        background_what = z_what[:, -1, :].unsqueeze(1)
+        background_where = torch.tensor(
+            [0.5, 0.5, 1.0, 1.0], dtype=torch.float, device=z_where.device
+        ).expand(z_where.shape[0], 1, 4)
+        background_present = torch.ones(
+            z_present.shape[0], 1, 1, device=z_present.device, dtype=z_present.dtype
+        )
+        background_depth, _ = torch.min(z_depth, dim=1)
+        background_depth = background_depth.unsqueeze(1) - 1e-3
+        return (
+            torch.cat((z_what, background_what), dim=1),
+            torch.cat((z_where, background_where), dim=1),
+            torch.cat((z_present, background_present), dim=1),
+            torch.cat((z_depth, background_depth), dim=1),
+        )
+
+    def pad_latents(
+        self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Pad latents according to Decoder's settings."""
+        z_what, z_where, z_present, z_depth = latents
+        # repeat rows to match z_where and z_present
+        z_what = z_what.index_select(dim=1, index=self.indices.long())
+        z_depth = z_depth.index_select(dim=1, index=self.indices.long())
+        # add background vector if necessary
+        if self.background:
+            z_what, z_where, z_present, z_depth = self.append_background_vectors(
+                z_what, z_where, z_present, z_depth
+            )
+        return z_what, z_where, z_present, z_depth
 
     def forward(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
@@ -205,13 +257,14 @@ class Decoder(nn.Module):
         .. and outputs reconstructed images batch
         .. (batch_size x channels x image_size x image_size)
         """
-        z_what, z_where, z_present, z_depth = latents
-        # repeat rows to match z_where and z_present
-        z_what = z_what.index_select(dim=1, index=self.indices.long())
-        z_depth = z_depth.index_select(dim=1, index=self.indices.long())
-        # create and apply binary mask for present objects
-        return self._render(
-            z_what=z_what, z_where=z_where, z_present=z_present, z_depth=z_depth
+        z_what, z_where, z_present, z_depth = self.pad_latents(latents)
+        # render reconstructions
+        reconstructions, depths = self.reconstruct_objects(
+            z_what, z_where, z_present, z_depth
+        )
+        # merge reconstructions
+        return self.merge_reconstructions(
+            reconstructions=reconstructions, weights=functional.softmax(depths, dim=1)
         )
 
 
@@ -223,6 +276,7 @@ class SSDIR(nn.Module):
         z_what_size: int = 64,
         ssd_config: Optional[CfgNode] = None,
         ssd_model_file: str = ("checkpoint.pth"),
+        background: bool = True,
         z_where_scale_eps: float = 1e-5,
         z_present_p_prior: float = 0.01,
         z_where_prior: float = 0.5,
@@ -251,7 +305,10 @@ class SSDIR(nn.Module):
 
         self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
         self.decoder = Decoder(
-            ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop_empty
+            ssd=ssd_model,
+            z_what_size=z_what_size,
+            drop_empty=drop_empty,
+            background=background,
         )
 
     def encoder_forward(
