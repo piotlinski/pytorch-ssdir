@@ -43,10 +43,9 @@ class Encoder(nn.Module):
         .. and outputs latent representation tuple
         .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
         """
-        with torch.no_grad():
-            features = self.ssd.backbone(images)
-            z_where = self.where_enc(features)
-            z_present = self.present_enc(features)
+        features = self.ssd.backbone(images)
+        z_where = self.where_enc(features)
+        z_present = self.present_enc(features)
         z_what_loc, z_what_scale = self.what_enc(features)
         z_depth_loc, z_depth_scale = self.depth_enc(features)
         return (
@@ -255,7 +254,9 @@ class SSDIR(nn.Module):
             ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop_empty
         )
 
-    def encoder_forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def encoder_forward(
+        self, inputs: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform forward pass through encoder network."""
         (
             (z_what_loc, z_what_scale),
@@ -268,7 +269,9 @@ class SSDIR(nn.Module):
         z_depth = dist.Normal(z_depth_loc, z_depth_scale).sample()
         return z_what, z_where, z_present, z_depth
 
-    def decoder_forward(self, latents: Tuple[torch.Tensor, ...]) -> torch.Tensor:
+    def decoder_forward(
+        self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> torch.Tensor:
         """Perform forward pass through decoder network."""
         outputs = self.decoder(latents)
         return outputs
@@ -320,7 +323,7 @@ class SSDIR(nn.Module):
             pyro.sample(
                 "obs",
                 dist.Bernoulli(output).to_event(3),
-                obs=x,
+                obs=dist.Bernoulli(x).sample(),
             )
 
     def guide(self, x: torch.Tensor):

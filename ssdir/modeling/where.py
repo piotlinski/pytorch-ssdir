@@ -30,7 +30,8 @@ class WhereEncoder(nn.Module):
                 strides=ssd_box_predictor.config.DATA.PRIOR.STRIDES,
                 aspect_ratios=ssd_box_predictor.config.DATA.PRIOR.ASPECT_RATIOS,
                 clip=ssd_box_predictor.config.DATA.PRIOR.CLIP,
-            )
+            ),
+            requires_grad=False,
         )
         self.center_variance = ssd_box_predictor.config.MODEL.CENTER_VARIANCE
         self.size_variance = ssd_box_predictor.config.MODEL.SIZE_VARIANCE
