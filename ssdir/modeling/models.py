@@ -221,8 +221,8 @@ class Decoder(nn.Module):
         """
         background_what = z_what[:, -1, :].unsqueeze(1)
         background_where = torch.tensor(
-            [0.5, 0.5, 1.0, 1.0], dtype=torch.float, device=z_where.device
-        ).expand(z_where.shape[0], 1, 4)
+            [0.5, 0.5, 1.0, 1.0], dtype=z_where.dtype, device=z_where.device
+        ).repeat(z_where.shape[0], 1, 1)
         background_present = torch.ones(
             z_present.shape[0], 1, 1, device=z_present.device, dtype=z_present.dtype
         )
