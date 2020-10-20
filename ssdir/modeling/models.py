@@ -73,7 +73,6 @@ class Decoder(nn.Module):
         ssd: SSD,
         z_what_size: int = 64,
         drop_empty: bool = True,
-        background: bool = False,
     ):
         super().__init__()
         ssd_config = ssd.predictor.config
@@ -84,19 +83,6 @@ class Decoder(nn.Module):
         self.empty_obj_const = nn.Parameter(
             torch.tensor(-1000, dtype=torch.float32), requires_grad=False
         )
-        self.background = background
-        if self.background:
-            self.background_what_enc = nn.Linear(
-                sum(
-                    boxes * features ** 2
-                    for features, boxes in zip(
-                        ssd_config.DATA.PRIOR.FEATURE_MAPS,
-                        ssd_config.DATA.PRIOR.BOXES_PER_LOC,
-                    )
-                )
-                * z_what_size,
-                z_what_size,
-            )
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
 
@@ -223,36 +209,6 @@ class Decoder(nn.Module):
             depths = z_depth.where(z_present == 1.0, self.empty_obj_const)
         return reconstructions, depths
 
-    @staticmethod
-    def append_background_vectors(
-        z_what: torch.Tensor,
-        z_where: torch.Tensor,
-        z_present: torch.Tensor,
-        z_depth: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Add background vectors to latent params.
-
-        .. background vectors are constructed based on the largest feature
-           depth is set to be an eps smaller than the smallest
-           where is set to fill the entire image
-           present is set to 1
-        """
-        background_what = z_what[:, -1, :].unsqueeze(1)
-        background_where = torch.tensor(
-            [0.5, 0.5, 1.0, 1.0], dtype=z_where.dtype, device=z_where.device
-        ).repeat(z_where.shape[0], 1, 1)
-        background_present = torch.ones(
-            z_present.shape[0], 1, 1, device=z_present.device, dtype=z_present.dtype
-        )
-        background_depth, _ = torch.min(z_depth, dim=1)
-        background_depth = background_depth.unsqueeze(1) - 1e-3
-        return (
-            torch.cat((z_what, background_what), dim=1),
-            torch.cat((z_where, background_where), dim=1),
-            torch.cat((z_present, background_present), dim=1),
-            torch.cat((z_depth, background_depth), dim=1),
-        )
-
     def pad_latents(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -261,11 +217,6 @@ class Decoder(nn.Module):
         # repeat rows to match z_where and z_present
         z_what = z_what.index_select(dim=1, index=self.indices.long())
         z_depth = z_depth.index_select(dim=1, index=self.indices.long())
-        # add background vector if necessary
-        if self.background:
-            z_what, z_where, z_present, z_depth = self.append_background_vectors(
-                z_what, z_where, z_present, z_depth
-            )
         return z_what, z_where, z_present, z_depth
 
     def forward(
@@ -326,7 +277,6 @@ class SSDIR(nn.Module):
             ssd=ssd_model,
             z_what_size=z_what_size,
             drop_empty=drop_empty,
-            background=background,
         )
 
     def encoder_forward(
@@ -386,12 +336,11 @@ class SSDIR(nn.Module):
 
             output = self.decoder((z_what, z_where, z_present, z_depth))
 
-            with pyro.validation_enabled(False):
-                pyro.sample(
-                    "obs",
-                    dist.Bernoulli(output).to_event(3),
-                    obs=x,
-                )
+            pyro.sample(
+                "obs",
+                dist.Bernoulli(output).to_event(3),
+                obs=x,
+            )
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
