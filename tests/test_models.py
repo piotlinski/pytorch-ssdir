@@ -153,7 +153,7 @@ def test_ssdir_encoder_forward(
     assert z_where.shape == (batch_size, n_ssd_features, 4)
     assert z_where.dtype == torch.float
     assert z_present.shape == (batch_size, n_ssd_features, 1)
-    assert z_present.dtype == torch.long
+    assert z_present.dtype == torch.float
     assert z_depth.shape == (batch_size, n_objects, 1)
     assert z_depth.dtype == torch.float
 

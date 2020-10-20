@@ -76,10 +76,24 @@ class Decoder(nn.Module):
     ):
         super().__init__()
         ssd_config = ssd.predictor.config
-        self.indices = nn.Parameter(self.reconstruction_indices(ssd_config))
+        self.indices = nn.Parameter(
+            self.reconstruction_indices(ssd_config), requires_grad=False
+        )
         self.drop = drop_empty
         self.empty_obj_const = nn.Parameter(torch.tensor(-1000, dtype=torch.float32))
         self.background = background
+        if self.background:
+            self.background_what_enc = nn.Linear(
+                sum(
+                    boxes * features ** 2
+                    for features, boxes in zip(
+                        ssd_config.DATA.PRIOR.FEATURE_MAPS,
+                        ssd_config.DATA.PRIOR.BOXES_PER_LOC,
+                    )
+                )
+                * z_what_size,
+                z_what_size,
+            )
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
 
@@ -137,13 +151,10 @@ class Decoder(nn.Module):
         """Pad tensors to have identical 1. dim shape
         .. and reshape to (batch_size x n_objects x ...)
         """
-        image_starter = torch.zeros(
+        image_starter = transformed_images.new_zeros(
             (1, 3, self.where_stn.image_size, self.where_stn.image_size),
-            device=transformed_images.device,
         )
-        z_depth_starter = torch.full(
-            (1, 1), fill_value=-float("inf"), device=z_depth.device
-        )
+        z_depth_starter = z_depth.new_full((1, 1), fill_value=-float("inf"))
         images = torch.cat((image_starter, transformed_images), dim=0)
         z_depth = torch.cat((z_depth_starter, z_depth), dim=0)
         max_present = torch.max(n_present)
@@ -175,15 +186,19 @@ class Decoder(nn.Module):
         z_depth: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Render reconstructions and their depths from batch."""
-        z_what_shape = z_what.shape[-1]
-        z_where_shape = z_where.shape[-1]
-        z_depth_shape = z_depth.shape[-1]
+        z_what_shape = z_what.shape
+        z_where_shape = z_where.shape
+        z_depth_shape = z_depth.shape
         if self.drop:
             present_mask = z_present == 1
             n_present = torch.sum(present_mask, dim=1).squeeze(-1)
-            z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_shape)
-            z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where_shape)
-            z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth_shape)
+            z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_shape[-1])
+            z_where = z_where[present_mask.expand_as(z_where)].view(
+                -1, z_where_shape[-1]
+            )
+            z_depth = z_depth[present_mask.expand_as(z_depth)].view(
+                -1, z_depth_shape[-1]
+            )
         z_what_flat = z_what.view(-1, z_what.shape[-1])
         z_where_flat = z_where.view(-1, z_where.shape[-1])
         decoded_images = self.what_dec(z_what_flat)
@@ -197,7 +212,7 @@ class Decoder(nn.Module):
         else:
             reconstructions = transformed_images.view(
                 -1,
-                z_what.shape[1],
+                z_what_shape[1],
                 3,
                 self.where_stn.image_size,
                 self.where_stn.image_size,
@@ -322,7 +337,7 @@ class SSDIR(nn.Module):
             (z_depth_loc, z_depth_scale),
         ) = self.encoder(inputs)
         z_what = dist.Normal(z_what_loc, z_what_scale).sample()
-        z_present = dist.Bernoulli(z_present).sample().long()
+        z_present = dist.Bernoulli(z_present).sample()
         z_depth = dist.Normal(z_depth_loc, z_depth_scale).sample()
         return z_what, z_where, z_present, z_depth
 
@@ -338,39 +353,32 @@ class SSDIR(nn.Module):
         pyro.module("decoder", self.decoder)
         batch_size = x.shape[0]
         with pyro.plate("data"):
-            z_what_loc = torch.zeros(
-                (batch_size, self.n_objects, self.z_what_size), device=x.device
-            )
+            z_what_loc = x.new_zeros((batch_size, self.n_objects, self.z_what_size))
             z_what_scale = torch.ones_like(z_what_loc)
+            z_what = pyro.sample(
+                "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
+            )
 
-            z_where_loc = torch.full(
-                (batch_size, self.n_ssd_features, 4),
-                fill_value=self.z_where_prior,
-                device=x.device,
+            z_where_loc = x.new_full(
+                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
             )
             z_where_scale = torch.full_like(
                 z_where_loc, fill_value=self.z_where_scale_eps
             )
-
-            z_present_p = torch.full(
-                (batch_size, self.n_ssd_features, 1),
-                fill_value=self.z_present_p_prior,
-                dtype=torch.float,
-                device=x.device,
-            )
-
-            z_depth_loc = torch.zeros((batch_size, self.n_objects, 1), device=x.device)
-            z_depth_scale = torch.ones_like(z_depth_loc)
-
-            z_what = pyro.sample(
-                "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
-            )
             z_where = pyro.sample(
                 "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
+            )
+
+            z_present_p = x.new_full(
+                (batch_size, self.n_ssd_features, 1),
+                fill_value=self.z_present_p_prior,
             )
             z_present = pyro.sample(
                 "z_present", dist.Bernoulli(z_present_p).to_event(2)
             )
+
+            z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
+            z_depth_scale = torch.ones_like(z_depth_loc)
             z_depth = pyro.sample(
                 "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
             )

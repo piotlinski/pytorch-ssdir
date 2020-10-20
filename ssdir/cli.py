@@ -38,6 +38,12 @@ warnings.filterwarnings(
         "because requires_grad=False"
     ),
 )
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "indices was not registered in the param store " "because requires_grad=False"
+    ),
+)
 
 
 @click.group(help="SSDIR")
