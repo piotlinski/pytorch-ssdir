@@ -23,7 +23,7 @@ class Encoder(nn.Module):
 
     .. latent representation consists of:
        - $$z_{what} ~ N(\\mu^{what}, \\sigma^{what})$$
-       - $$z_{where} in R^4$$
+       - $$z_{where} ~ N(\\mu^{what,4}, \\sigma^{what,4})$$
        - $$z_{present} ~ Bernoulli(p_{present})$$
        - $$z_{depth} ~ N(\\mu_{depth}, \\sigma_{depth})$$
     """
@@ -43,16 +43,17 @@ class Encoder(nn.Module):
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor, ...]], ...]:
         """Takes images tensors (batch_size x channels x image_size x image_size)
         .. and outputs latent representation tuple
-        .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
+        .. (z_what (loc & scale), z_where (loc & scale),
+        .. z_present, z_depth (loc & scale))
         """
         features = self.ssd_backbone(images)
-        z_where = self.where_enc(features)
+        z_where_loc, z_where_scale = self.where_enc(features)
         z_present = self.present_enc(features)
         z_what_loc, z_what_scale = self.what_enc(features)
         z_depth_loc, z_depth_scale = self.depth_enc(features)
         return (
             (z_what_loc, z_what_scale),
-            z_where,
+            (z_where_loc, z_where_scale),
             z_present,
             (z_depth_loc, z_depth_scale),
         )
@@ -336,11 +337,12 @@ class SSDIR(nn.Module):
         """Perform forward pass through encoder network."""
         (
             (z_what_loc, z_what_scale),
-            z_where,
+            (z_where_loc, z_where_scale),
             z_present,
             (z_depth_loc, z_depth_scale),
         ) = self.encoder(inputs)
         z_what = dist.Normal(z_what_loc, z_what_scale).sample()
+        z_where = dist.Normal(z_where_loc, z_where_scale).sample()
         z_present = dist.Bernoulli(z_present).sample()
         z_depth = dist.Normal(z_depth_loc, z_depth_scale).sample()
         return z_what, z_where, z_present, z_depth
@@ -403,19 +405,13 @@ class SSDIR(nn.Module):
         with pyro.plate("data", x.shape[0]):
             (
                 (z_what_loc, z_what_scale),
-                z_where_loc,
+                (z_where_loc, z_where_scale),
                 z_present_p,
                 (z_depth_loc, z_depth_scale),
             ) = self.encoder(x)
 
             pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
-            pyro.sample(
-                "z_where",
-                dist.Normal(
-                    z_where_loc,
-                    torch.full_like(z_where_loc, fill_value=self.z_where_scale_eps),
-                ).to_event(2),
-            )
+            pyro.sample("z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2))
             pyro.sample(
                 "z_present",
                 dist.Bernoulli(z_present_p).to_event(2),

@@ -18,7 +18,7 @@ def test_encoder_dimensions(
     encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
     (
         (z_what_loc, z_what_scale),
-        z_where,
+        (z_where_loc, z_where_scale),
         z_present,
         (z_depth_loc, z_depth_scale),
     ) = encoder(inputs)
@@ -26,7 +26,7 @@ def test_encoder_dimensions(
     assert (
         z_what_loc.shape == z_what_scale.shape == (batch_size, n_objects, z_what_size)
     )
-    assert z_where.shape == (batch_size, n_ssd_features, 4)
+    assert z_where_loc.shape == z_where_scale.shape == (batch_size, n_ssd_features, 4)
     assert z_present.shape == (batch_size, n_ssd_features, 1)
     assert z_depth_loc.shape == z_depth_scale.shape == (batch_size, n_objects, 1)
 

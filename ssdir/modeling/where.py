@@ -1,5 +1,6 @@
 """$$z_{where}$$ encoder and decoder."""
 import warnings
+from copy import deepcopy
 from typing import Tuple
 
 import torch
@@ -20,7 +21,12 @@ class WhereEncoder(nn.Module):
 
     def __init__(self, ssd_box_predictor: SSDBoxPredictor):
         super().__init__()
-        self.ssd_reg_headers = ssd_box_predictor.reg_headers
+        self.ssd_loc_reg_headers = ssd_box_predictor.reg_headers
+        self.scale_reg_headers = deepcopy(self.ssd_loc_reg_headers)
+        for m in self.scale_reg_headers.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.zeros_(m.bias)
         ssd_config = ssd_box_predictor.config
         self.anchors = nn.Parameter(
             process_prior(
@@ -37,30 +43,43 @@ class WhereEncoder(nn.Module):
         self.center_variance = ssd_config.MODEL.CENTER_VARIANCE
         self.size_variance = ssd_config.MODEL.SIZE_VARIANCE
 
-    def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
+    def forward(
+        self, features: Tuple[torch.Tensor, ...]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Takes tuple of tensors (batch_size x grid x grid x features)
-        .. and outputs bounding box parameters x_center, y_center, w, h tensor
+        .. and outputsloc and scale for bounding box parameters
+        .. x_center, y_center, w, h tensor
         .. (batch_size x sum_features(grid*grid*n_boxes) x 4)
         """
-        where = []
+        where_locs = []
+        where_scales = []
         batch_size = features[0].shape[0]
-        for feature, reg_header in zip(features, self.ssd_reg_headers):
-            where.append(
-                reg_header(feature)
+        for feature, loc_reg_header, scale_reg_header in zip(
+            features, self.ssd_loc_reg_headers, self.scale_reg_headers
+        ):
+            where_locs.append(
+                loc_reg_header(feature)
+                .permute(0, 2, 3, 1)
+                .contiguous()
+                .view(batch_size, -1, 4)
+            )
+            where_scales.append(
+                functional.softplus(scale_reg_header(feature))
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, 4)
             )
 
-        where_locations = torch.cat(where, dim=1)
-        where_boxes = convert_locations_to_boxes(
+        where_locations = torch.cat(where_locs, dim=1)
+        where_boxes_loc = convert_locations_to_boxes(
             locations=where_locations,
             priors=self.anchors,
             center_variance=self.center_variance,
             size_variance=self.size_variance,
         )
+        where_boxes_scale = torch.cat(where_scales, dim=1)
 
-        return where_boxes
+        return where_boxes_loc, where_boxes_scale
 
 
 class WhereTransformer(nn.Module):

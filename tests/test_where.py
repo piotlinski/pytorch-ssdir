@@ -8,14 +8,18 @@ from ssdir.modeling.where import WhereEncoder, WhereTransformer
 def test_where_encoder_dimensions(ssd_model, ssd_features, n_ssd_features):
     """Verify WhereEncoder output dimensions."""
     encoder = WhereEncoder(ssd_box_predictor=ssd_model.predictor)
-    outputs = encoder(ssd_features)
-    assert outputs.shape == (ssd_features[0].shape[0], n_ssd_features, 4)
+    outputs_1, outputs_2 = encoder(ssd_features)
+    assert (
+        outputs_1.shape
+        == outputs_2.shape
+        == (ssd_features[0].shape[0], n_ssd_features, 4)
+    )
 
 
 def test_where_encoder_dtype(ssd_model, ssd_features):
     encoder = WhereEncoder(ssd_box_predictor=ssd_model.predictor)
-    outputs = encoder(ssd_features)
-    assert outputs.dtype == torch.float
+    outputs_1, outputs_2 = encoder(ssd_features)
+    assert outputs_1.dtype == outputs_2.dtype == torch.float
 
 
 @pytest.mark.parametrize("decoded_size", [2, 3])
