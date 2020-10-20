@@ -15,6 +15,8 @@ from ssdir.modeling.present import PresentEncoder
 from ssdir.modeling.what import WhatDecoder, WhatEncoder
 from ssdir.modeling.where import WhereEncoder, WhereTransformer
 
+pyro.enable_validation(True)
+
 
 class Encoder(nn.Module):
     """Module encoding input image to latent representation.
@@ -28,7 +30,7 @@ class Encoder(nn.Module):
 
     def __init__(self, ssd: SSD, z_what_size: int = 64):
         super().__init__()
-        self.ssd = ssd
+        self.ssd_backbone = ssd.backbone
         self.what_enc = WhatEncoder(
             z_what_size=z_what_size, feature_channels=ssd.backbone.out_channels
         )
@@ -43,7 +45,7 @@ class Encoder(nn.Module):
         .. and outputs latent representation tuple
         .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
         """
-        features = self.ssd.backbone(images)
+        features = self.ssd_backbone(images)
         z_where = self.where_enc(features)
         z_present = self.present_enc(features)
         z_what_loc, z_what_scale = self.what_enc(features)
@@ -80,7 +82,9 @@ class Decoder(nn.Module):
             self.reconstruction_indices(ssd_config), requires_grad=False
         )
         self.drop = drop_empty
-        self.empty_obj_const = nn.Parameter(torch.tensor(-1000, dtype=torch.float32))
+        self.empty_obj_const = nn.Parameter(
+            torch.tensor(-1000, dtype=torch.float32), requires_grad=False
+        )
         self.background = background
         if self.background:
             self.background_what_enc = nn.Linear(
@@ -314,9 +318,9 @@ class SSDIR(nn.Module):
                 ssd_config.DATA.PRIOR.FEATURE_MAPS, ssd_config.DATA.PRIOR.BOXES_PER_LOC
             )
         )
+        self.z_where_prior = z_where_prior
         self.z_where_scale_eps = z_where_scale_eps
         self.z_present_p_prior = z_present_p_prior
-        self.z_where_prior = z_where_prior
 
         self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
         self.decoder = Decoder(
@@ -352,60 +356,71 @@ class SSDIR(nn.Module):
         """Pyro model; $$P(x|z)P(z)$$."""
         pyro.module("decoder", self.decoder)
         batch_size = x.shape[0]
-        with pyro.plate("data"):
-            z_what_loc = x.new_zeros((batch_size, self.n_objects, self.z_what_size))
-            z_what_scale = torch.ones_like(z_what_loc)
+
+        z_what_loc = x.new_zeros(batch_size, self.n_objects, self.z_what_size)
+        z_what_scale = torch.ones_like(z_what_loc)
+        z_where_loc = x.new_full(
+            (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
+        )
+        z_where_scale = torch.full_like(z_where_loc, fill_value=self.z_where_scale_eps)
+        z_present_p = x.new_full(
+            (batch_size, self.n_ssd_features, 1),
+            fill_value=self.z_present_p_prior,
+        )
+        z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
+        z_depth_scale = torch.ones_like(z_depth_loc)
+
+        with pyro.plate("data", batch_size):
             z_what = pyro.sample(
                 "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
-            )
-
-            z_where_loc = x.new_full(
-                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
-            )
-            z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_eps
             )
             z_where = pyro.sample(
                 "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
             )
-
-            z_present_p = x.new_full(
-                (batch_size, self.n_ssd_features, 1),
-                fill_value=self.z_present_p_prior,
-            )
             z_present = pyro.sample(
-                "z_present", dist.Bernoulli(z_present_p).to_event(2)
+                "z_present",
+                dist.Bernoulli(z_present_p).to_event(2),
+                infer=dict(
+                    baseline={"use_decaying_avg_baseline": True, "baseline_beta": 0.95}
+                ),
             )
-
-            z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
-            z_depth_scale = torch.ones_like(z_depth_loc)
             z_depth = pyro.sample(
                 "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
             )
 
             output = self.decoder((z_what, z_where, z_present, z_depth))
 
-            pyro.sample(
-                "obs",
-                dist.Bernoulli(output).to_event(3),
-                obs=dist.Bernoulli(x).sample(),
-            )
+            with pyro.validation_enabled(False):
+                pyro.sample(
+                    "obs",
+                    dist.Bernoulli(output).to_event(3),
+                    obs=x,
+                )
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
         pyro.module("encoder", self.encoder)
-        with pyro.plate("data"):
+        with pyro.plate("data", x.shape[0]):
             (
                 (z_what_loc, z_what_scale),
                 z_where_loc,
                 z_present_p,
                 (z_depth_loc, z_depth_scale),
             ) = self.encoder(x)
-            z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_eps
-            )
 
             pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
-            pyro.sample("z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2))
-            pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
+            pyro.sample(
+                "z_where",
+                dist.Normal(
+                    z_where_loc,
+                    torch.full_like(z_where_loc, fill_value=self.z_where_scale_eps),
+                ).to_event(2),
+            )
+            pyro.sample(
+                "z_present",
+                dist.Bernoulli(z_present_p).to_event(2),
+                infer=dict(
+                    baseline={"use_decaying_avg_baseline": True, "baseline_beta": 0.95}
+                ),
+            )
             pyro.sample("z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2))

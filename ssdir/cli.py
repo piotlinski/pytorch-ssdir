@@ -9,7 +9,7 @@ import horovod.torch as hvd
 import numpy as np
 import pyro.optim as optim
 import torch
-from pyro.infer import SVI, Trace_ELBO
+from pyro.infer import SVI, TraceGraph_ELBO
 from pyssd.config import get_config
 from pyssd.data.datasets import datasets
 from pyssd.data.transforms import TrainDataTransform
@@ -41,7 +41,14 @@ warnings.filterwarnings(
 warnings.filterwarnings(
     "ignore",
     message=(
-        "indices was not registered in the param store " "because requires_grad=False"
+        "indices was not registered in the param store because requires_grad=False"
+    ),
+)
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "empty_obj_const was not registered in the param store "
+        "because requires_grad=False"
     ),
 )
 
@@ -137,6 +144,7 @@ def train(
         z_what_size=z_what_size,
         drop_empty=drop,
         background=render_background,
+        z_present_p_prior=z_present_p_prior,
     ).to(device)
     optimizer = optim.Adam(lr_callable(lr, ssd=ssd_lr))
     dataset = datasets[ssd_config.DATA.DATASET](
@@ -165,7 +173,7 @@ def train(
     vis_images = None
     vis_boxes = None
 
-    loss_fn = Trace_ELBO()
+    loss_fn = TraceGraph_ELBO()
     svi = SVI(model=model.model, guide=model.guide, optim=optimizer, loss=loss_fn)
 
     global_step = 0
