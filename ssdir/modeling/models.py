@@ -15,8 +15,6 @@ from ssdir.modeling.present import PresentEncoder
 from ssdir.modeling.what import WhatDecoder, WhatEncoder
 from ssdir.modeling.where import WhereEncoder, WhereTransformer
 
-pyro.enable_validation(True)
-
 
 class Encoder(nn.Module):
     """Module encoding input image to latent representation.
@@ -380,11 +378,7 @@ class SSDIR(nn.Module):
                 "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
             )
             z_present = pyro.sample(
-                "z_present",
-                dist.Bernoulli(z_present_p).to_event(2),
-                infer=dict(
-                    baseline={"use_decaying_avg_baseline": True, "baseline_beta": 0.95}
-                ),
+                "z_present", dist.Bernoulli(z_present_p).to_event(2)
             )
             z_depth = pyro.sample(
                 "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
@@ -412,11 +406,5 @@ class SSDIR(nn.Module):
 
             pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
             pyro.sample("z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2))
-            pyro.sample(
-                "z_present",
-                dist.Bernoulli(z_present_p).to_event(2),
-                infer=dict(
-                    baseline={"use_decaying_avg_baseline": True, "baseline_beta": 0.95}
-                ),
-            )
+            pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
             pyro.sample("z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2))

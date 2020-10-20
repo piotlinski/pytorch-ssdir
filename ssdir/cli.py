@@ -9,7 +9,7 @@ import horovod.torch as hvd
 import numpy as np
 import pyro.optim as optim
 import torch
-from pyro.infer import SVI, TraceGraph_ELBO
+from pyro.infer import SVI, Trace_ELBO
 from pyssd.config import get_config
 from pyssd.data.datasets import datasets
 from pyssd.data.transforms import TrainDataTransform
@@ -173,7 +173,7 @@ def train(
     vis_images = None
     vis_boxes = None
 
-    loss_fn = TraceGraph_ELBO()
+    loss_fn = Trace_ELBO()
     svi = SVI(model=model.model, guide=model.guide, optim=optimizer, loss=loss_fn)
 
     global_step = 0
