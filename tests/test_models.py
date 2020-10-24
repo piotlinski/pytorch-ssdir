@@ -72,9 +72,9 @@ def test_pad_indices(n_present, expected):
         ),
     ],
 )
-def test_merge_images(inputs, weights, expected):
-    """Verify weighted sum-based image merging."""
-    merged = Decoder.merge_images(inputs, weights=weights)
+def test_merge_reconstructions(inputs, weights, expected):
+    """Verify weighted sum-based reconstructions merging."""
+    merged = Decoder.merge_reconstructions(inputs, weights=weights)
     assert merged.shape == (inputs.shape[0], *inputs.shape[2:])
     assert (merged == expected).all()
 
@@ -121,7 +121,7 @@ def test_ssdir_encoder_forward(
     assert z_where.shape == (batch_size, n_ssd_features, 4)
     assert z_where.dtype == torch.float
     assert z_present.shape == (batch_size, n_ssd_features, 1)
-    assert z_present.dtype == torch.long
+    assert z_present.dtype == torch.float
     assert z_depth.shape == (batch_size, n_objects, 1)
     assert z_depth.dtype == torch.float
 
