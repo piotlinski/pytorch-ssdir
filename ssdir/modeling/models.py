@@ -1,8 +1,11 @@
 """SSDIR encoder, decoder, model and guide declarations."""
-from typing import Optional, Tuple, Union
+from functools import reduce
+from operator import mul
+from typing import Iterator, Optional, Tuple, Union
 
 import pyro
 import pyro.distributions as dist
+import pyro.poutine as poutine
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
@@ -28,7 +31,7 @@ class Encoder(nn.Module):
 
     def __init__(self, ssd: SSD, z_what_size: int = 64):
         super().__init__()
-        self.ssd = ssd
+        self.ssd_backbone = ssd.backbone
         self.what_enc = WhatEncoder(
             z_what_size=z_what_size, feature_channels=ssd.backbone.out_channels
         )
@@ -43,10 +46,9 @@ class Encoder(nn.Module):
         .. and outputs latent representation tuple
         .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
         """
-        with torch.no_grad():
-            features = self.ssd.backbone(images)
-            z_where = self.where_enc(features)
-            z_present = self.present_enc(features)
+        features = self.ssd_backbone(images)
+        z_where = self.where_enc(features)
+        z_present = self.present_enc(features)
         z_what_loc, z_what_scale = self.what_enc(features)
         z_depth_loc, z_depth_scale = self.depth_enc(features)
         return (
@@ -73,9 +75,11 @@ class Decoder(nn.Module):
         ssd_config = ssd.predictor.config
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
         self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
-        self.indices = nn.Parameter(self.reconstruction_indices(ssd_config))
+        self.indices = nn.Parameter(
+            self.reconstruction_indices(ssd_config), requires_grad=False
+        )
         self.drop = drop_empty
-        self.empty_obj_const = nn.Parameter(torch.tensor(-1000, dtype=torch.float32))
+        self.empty_obj_const = nn.Parameter(torch.tensor(-1000.0), requires_grad=False)
 
     @staticmethod
     def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
@@ -131,13 +135,10 @@ class Decoder(nn.Module):
         """Pad tensors to have identical 1. dim shape
         .. and reshape to (batch_size x n_objects x ...)
         """
-        image_starter = torch.zeros(
-            (1, 3, self.where_stn.image_size, self.where_stn.image_size),
-            device=transformed_images.device,
+        image_starter = transformed_images.new_zeros(
+            (1, 3, self.where_stn.image_size, self.where_stn.image_size)
         )
-        z_depth_starter = torch.full(
-            (1, 1), fill_value=-float("inf"), device=z_depth.device
-        )
+        z_depth_starter = z_depth.new_full((1, 1), fill_value=-float("inf"))
         images = torch.cat((image_starter, transformed_images), dim=0)
         z_depth = torch.cat((z_depth_starter, z_depth), dim=0)
         max_present = torch.max(n_present)
@@ -154,28 +155,34 @@ class Decoder(nn.Module):
         return images, z_depth
 
     @staticmethod
-    def merge_images(images: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+    def merge_reconstructions(
+        reconstructions: torch.Tensor, weights: torch.Tensor
+    ) -> torch.Tensor:
         """Combine decoded images into one by weighted sum."""
-        weighted_images = images * weights.view(*weights.shape[:2], 1, 1, 1)
+        weighted_images = reconstructions * weights.view(*weights.shape[:2], 1, 1, 1)
         return torch.sum(weighted_images, dim=1)
 
-    def _render(
+    def reconstruct_objects(
         self,
         z_what: torch.Tensor,
         z_where: torch.Tensor,
         z_present: torch.Tensor,
         z_depth: torch.Tensor,
     ) -> torch.Tensor:
-        """Render single image from batch."""
-        z_what_shape = z_what.shape[-1]
-        z_where_shape = z_where.shape[-1]
-        z_depth_shape = z_depth.shape[-1]
+        """Render reconstructions and their depths from batch."""
+        z_what_shape = z_what.shape
+        z_where_shape = z_where.shape
+        z_depth_shape = z_depth.shape
         if self.drop:
             present_mask = z_present == 1
             n_present = torch.sum(present_mask, dim=1).squeeze(-1)
-            z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_shape)
-            z_where = z_where[present_mask.expand_as(z_where)].view(-1, z_where_shape)
-            z_depth = z_depth[present_mask.expand_as(z_depth)].view(-1, z_depth_shape)
+            z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_shape[-1])
+            z_where = z_where[present_mask.expand_as(z_where)].view(
+                -1, z_where_shape[-1]
+            )
+            z_depth = z_depth[present_mask.expand_as(z_depth)].view(
+                -1, z_depth_shape[-1]
+            )
         z_what_flat = z_what.view(-1, z_what.shape[-1])
         z_where_flat = z_where.view(-1, z_where.shape[-1])
         decoded_images = self.what_dec(z_what_flat)
@@ -189,15 +196,23 @@ class Decoder(nn.Module):
         else:
             reconstructions = transformed_images.view(
                 -1,
-                z_what.shape[1],
+                z_what_shape[1],
                 3,
                 self.where_stn.image_size,
                 self.where_stn.image_size,
             )
             depths = z_depth.where(z_present == 1.0, self.empty_obj_const)
-        merge_weights = functional.softmax(depths, dim=1)
-        images = self.merge_images(images=reconstructions, weights=merge_weights)
-        return images
+        return reconstructions, depths
+
+    def pad_latents(
+        self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Pad latents according to Decoder's settings."""
+        z_what, z_where, z_present, z_depth = latents
+        # repeat rows to match z_where and z_present
+        z_what = z_what.index_select(dim=1, index=self.indices.long())
+        z_depth = z_depth.index_select(dim=1, index=self.indices.long())
+        return z_what, z_where, z_present, z_depth
 
     def forward(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
@@ -206,13 +221,14 @@ class Decoder(nn.Module):
         .. and outputs reconstructed images batch
         .. (batch_size x channels x image_size x image_size)
         """
-        z_what, z_where, z_present, z_depth = latents
-        # repeat rows to match z_where and z_present
-        z_what = z_what.index_select(dim=1, index=self.indices.long())
-        z_depth = z_depth.index_select(dim=1, index=self.indices.long())
-        # create and apply binary mask for present objects
-        return self._render(
-            z_what=z_what, z_where=z_where, z_present=z_present, z_depth=z_depth
+        z_what, z_where, z_present, z_depth = self.pad_latents(latents)
+        # render reconstructions
+        reconstructions, depths = self.reconstruct_objects(
+            z_what, z_where, z_present, z_depth
+        )
+        # merge reconstructions
+        return self.merge_reconstructions(
+            reconstructions=reconstructions, weights=functional.softmax(depths, dim=1)
         )
 
 
@@ -226,6 +242,7 @@ class SSDIR(nn.Module):
         ssd_model_file: str = ("checkpoint.pth"),
         z_where_scale_eps: float = 1e-5,
         z_present_p_prior: float = 0.01,
+        z_where_prior: float = 0.5,
         drop_empty: bool = True,
     ):
         super().__init__()
@@ -247,13 +264,16 @@ class SSDIR(nn.Module):
         )
         self.z_where_scale_eps = z_where_scale_eps
         self.z_present_p_prior = z_present_p_prior
+        self.z_where_prior = z_where_prior
 
         self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
         self.decoder = Decoder(
             ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop_empty
         )
 
-    def encoder_forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def encoder_forward(
+        self, inputs: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform forward pass through encoder network."""
         (
             (z_what_loc, z_what_scale),
@@ -262,78 +282,102 @@ class SSDIR(nn.Module):
             (z_depth_loc, z_depth_scale),
         ) = self.encoder(inputs)
         z_what = dist.Normal(z_what_loc, z_what_scale).sample()
-        z_present = dist.Bernoulli(z_present).sample().long()
+        z_present = dist.Bernoulli(z_present).sample()
         z_depth = dist.Normal(z_depth_loc, z_depth_scale).sample()
         return z_what, z_where, z_present, z_depth
 
-    def decoder_forward(self, latents: Tuple[torch.Tensor, ...]) -> torch.Tensor:
+    def decoder_forward(
+        self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> torch.Tensor:
         """Perform forward pass through decoder network."""
         outputs = self.decoder(latents)
         return outputs
 
     def model(self, x: torch.Tensor):
         """Pyro model; $$P(x|z)P(z)$$."""
-        pyro.module("decoder", self.decoder)
-        batch_size = x.shape[0]
-        with pyro.plate("data"):
-            z_what_loc = torch.zeros(
-                (batch_size, self.n_objects, self.z_what_size), device=x.device
-            )
+        with poutine.scale(scale=1 / reduce(mul, x.shape[1:])):
+            pyro.module("decoder", self.decoder)
+            batch_size = x.shape[0]
+
+            z_what_loc = x.new_zeros(batch_size, self.n_objects, self.z_what_size)
             z_what_scale = torch.ones_like(z_what_loc)
 
-            z_where_loc = torch.zeros(
-                (batch_size, self.n_ssd_features, 4), device=x.device
+            z_where_loc = x.new_full(
+                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
             )
             z_where_scale = torch.full_like(
                 z_where_loc, fill_value=self.z_where_scale_eps
             )
 
-            z_present_p = torch.full(
+            z_present_p = x.new_full(
                 (batch_size, self.n_ssd_features, 1),
                 fill_value=self.z_present_p_prior,
-                dtype=torch.float,
-                device=x.device,
             )
 
-            z_depth_loc = torch.zeros((batch_size, self.n_objects, 1), device=x.device)
+            z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
             z_depth_scale = torch.ones_like(z_depth_loc)
 
-            z_what = pyro.sample(
-                "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
-            )
-            z_where = pyro.sample(
-                "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
-            )
-            z_present = pyro.sample(
-                "z_present", dist.Bernoulli(z_present_p).to_event(2)
-            )
-            z_depth = pyro.sample(
-                "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
-            )
+            with pyro.plate("data"):
+                z_what = pyro.sample(
+                    "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
+                )
+                z_where = pyro.sample(
+                    "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
+                )
+                z_present = pyro.sample(
+                    "z_present", dist.Bernoulli(z_present_p).to_event(2)
+                )
+                z_depth = pyro.sample(
+                    "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
+                )
 
-            output = self.decoder((z_what, z_where, z_present, z_depth))
+                output = self.decoder((z_what, z_where, z_present, z_depth))
 
-            pyro.sample(
-                "obs",
-                dist.Bernoulli(output).to_event(3),
-                obs=x,
-            )
+                pyro.sample(
+                    "obs",
+                    dist.Bernoulli(output.view(batch_size, -1)).to_event(1),
+                    obs=x.view(batch_size, -1),
+                )
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
-        pyro.module("encoder", self.encoder)
-        with pyro.plate("data"):
-            (
-                (z_what_loc, z_what_scale),
-                z_where_loc,
-                z_present_p,
-                (z_depth_loc, z_depth_scale),
-            ) = self.encoder(x)
-            z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_eps
-            )
+        with poutine.scale(scale=1 / reduce(mul, x.shape[1:])):
+            pyro.module("encoder", self.encoder)
+            with pyro.plate("data"):
+                (
+                    (z_what_loc, z_what_scale),
+                    z_where_loc,
+                    z_present_p,
+                    (z_depth_loc, z_depth_scale),
+                ) = self.encoder(x)
+                z_where_scale = torch.full_like(
+                    z_where_loc, fill_value=self.z_where_scale_eps
+                )
 
-            pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
-            pyro.sample("z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2))
-            pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
-            pyro.sample("z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2))
+                pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
+                pyro.sample(
+                    "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
+                )
+                pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
+                pyro.sample(
+                    "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
+                )
+
+    def filtered_parameters(
+        self,
+        include: Optional[str] = None,
+        exclude: Optional[str] = None,
+        recurse: bool = True,
+    ) -> Iterator[nn.Parameter]:
+        """Get filtered SSDIR parameters for the optimizer.
+        :param include: parameter name part to include
+        :param exclude: parameter name part to exclude
+        :param recurse: iterate recursively through model parameters
+        :return: iterator of filtered parameters
+        """
+        for name, param in self.named_parameters(recurse=recurse):
+            if include is not None and include not in name:
+                continue
+            if exclude is not None and exclude in name:
+                continue
+            yield param
