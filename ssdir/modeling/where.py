@@ -1,5 +1,4 @@
 """$$z_{where}$$ encoder and decoder."""
-import warnings
 from typing import Tuple
 
 import torch
@@ -20,20 +19,22 @@ class WhereEncoder(nn.Module):
 
     def __init__(self, ssd_box_predictor: SSDBoxPredictor):
         super().__init__()
-        self.predictor = ssd_box_predictor
+        self.ssd_loc_reg_headers = ssd_box_predictor.reg_headers
+        ssd_config = ssd_box_predictor.config
         self.anchors = nn.Parameter(
             process_prior(
-                image_size=ssd_box_predictor.config.DATA.SHAPE,
-                feature_maps=ssd_box_predictor.config.DATA.PRIOR.FEATURE_MAPS,
-                min_sizes=ssd_box_predictor.config.DATA.PRIOR.MIN_SIZES,
-                max_sizes=ssd_box_predictor.config.DATA.PRIOR.MAX_SIZES,
-                strides=ssd_box_predictor.config.DATA.PRIOR.STRIDES,
-                aspect_ratios=ssd_box_predictor.config.DATA.PRIOR.ASPECT_RATIOS,
-                clip=ssd_box_predictor.config.DATA.PRIOR.CLIP,
-            )
+                image_size=ssd_config.DATA.SHAPE,
+                feature_maps=ssd_config.DATA.PRIOR.FEATURE_MAPS,
+                min_sizes=ssd_config.DATA.PRIOR.MIN_SIZES,
+                max_sizes=ssd_config.DATA.PRIOR.MAX_SIZES,
+                strides=ssd_config.DATA.PRIOR.STRIDES,
+                aspect_ratios=ssd_config.DATA.PRIOR.ASPECT_RATIOS,
+                clip=ssd_config.DATA.PRIOR.CLIP,
+            ),
+            requires_grad=False,
         )
-        self.center_variance = ssd_box_predictor.config.MODEL.CENTER_VARIANCE
-        self.size_variance = ssd_box_predictor.config.MODEL.SIZE_VARIANCE
+        self.center_variance = ssd_config.MODEL.CENTER_VARIANCE
+        self.size_variance = ssd_config.MODEL.SIZE_VARIANCE
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         """Takes tuple of tensors (batch_size x grid x grid x features)
@@ -42,7 +43,7 @@ class WhereEncoder(nn.Module):
         """
         where = []
         batch_size = features[0].shape[0]
-        for feature, reg_header in zip(features, self.predictor.reg_headers):
+        for feature, reg_header in zip(features, self.ssd_loc_reg_headers):
             where.append(
                 reg_header(feature)
                 .permute(0, 2, 3, 1)
@@ -117,19 +118,14 @@ class WhereTransformer(nn.Module):
         if where_boxes.numel():
             scaled_boxes = self.scale_boxes(where_boxes)
             theta = self.convert_boxes_to_theta(where_boxes=scaled_boxes)
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message="Default grid_sample and affine_grid behavior has changed ",
-                )
-                grid = functional.affine_grid(
-                    theta=theta,
-                    size=[n_objects, channels, self.image_size, self.image_size],
-                )
-                transformed_images = functional.grid_sample(
-                    input=decoded_images,
-                    grid=grid,
-                )
+            grid = functional.affine_grid(
+                theta=theta,
+                size=[n_objects, channels, self.image_size, self.image_size],
+            )
+            transformed_images = functional.grid_sample(
+                input=decoded_images,
+                grid=grid,
+            )
         else:
             transformed_images = decoded_images.view(
                 -1, channels, self.image_size, self.image_size

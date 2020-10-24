@@ -1,14 +1,14 @@
 """Command Line Interface."""
 import logging
 import time
+import warnings
 from typing import List
 
 import click
 import horovod.torch as hvd
 import numpy as np
-import pyro.optim as optim
 import torch
-from pyro.infer import SVI, Trace_ELBO
+from pyro.infer import Trace_ELBO
 from pyssd.config import get_config
 from pyssd.data.datasets import datasets
 from pyssd.data.transforms import TrainDataTransform
@@ -23,6 +23,32 @@ from ssdir.run.visualize import visualize_latents
 logger = logging.getLogger(__name__)
 
 
+warnings.filterwarnings(
+    "ignore",
+    message="Default grid_sample and affine_grid behavior has changed",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "where_enc.anchors was not registered in the param store "
+        "because requires_grad=False"
+    ),
+)
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "indices was not registered in the param store because requires_grad=False"
+    ),
+)
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "empty_obj_const was not registered in the param store "
+        "because requires_grad=False"
+    ),
+)
+
+
 @click.group(help="SSDIR")
 @click.pass_context
 def main(ctx: click.Context):
@@ -33,7 +59,8 @@ def main(ctx: click.Context):
 
 @main.command(help="Train model")
 @click.option("--n-epochs", default=100, help="number of epochs", type=int)
-@click.option("--lr", default=1e-4, help="learning rate", type=float)
+@click.option("--lr", default=1e-3, help="learning rate", type=float)
+@click.option("--ssd-lr", default=1e-6, help="ssd learning rate", type=float)
 @click.option("--bs", default=4, help="batch size", type=int)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
 @click.option(
@@ -72,6 +99,7 @@ def train(
     obj,
     n_epochs: int,
     lr: float,
+    ssd_lr: float,
     bs: int,
     z_what_size: int,
     drop: bool,
@@ -99,7 +127,13 @@ def train(
     model = SSDIR(ssd_config=ssd_config, z_what_size=z_what_size, drop_empty=drop).to(
         device
     )
-    optimizer = optim.Adam({"lr": lr})
+    optimizer = torch.optim.Adam(
+        [
+            {"params": model.filtered_parameters(exclude="ssd")},
+            {"params": model.filtered_parameters(include="ssd"), "lr": ssd_lr},
+        ],
+        lr=lr,
+    )
     dataset = datasets[ssd_config.DATA.DATASET](
         f"{ssd_config.ASSETS_DIR}/{ssd_config.DATA.DATASET_DIR}",
         data_transform=TrainDataTransform(ssd_config),
@@ -123,11 +157,7 @@ def train(
         batch_size=bs,
     )
 
-    vis_images = None
-    vis_boxes = None
-
-    loss_fn = Trace_ELBO()
-    svi = SVI(model=model.model, guide=model.guide, optim=optimizer, loss=loss_fn)
+    loss_fn = Trace_ELBO().differentiable_loss
 
     global_step = 0
     logging_losses: List[float] = []
@@ -150,16 +180,16 @@ def train(
         for images, boxes, _ in train_loader:
             step_start = time.perf_counter()
             images = images.to(device)
-            loss = svi.step(images)
-            if vis_images is None and vis_boxes is None:
-                vis_images = images.detach()
-                vis_boxes = boxes.detach()
+
+            loss = loss_fn(model.model, model.guide, images)
 
             if horovod:
-                loss = hvd.allreduce(torch.tensor(loss), "loss")
-                loss = loss.item()
+                loss = hvd.allreduce(loss, "loss")
 
-            logging_losses.append(loss)
+            loss.backward()
+            optimizer.step()
+
+            logging_losses.append(loss.item())
 
             if global_step % logging_step == 0 and (
                 (horovod and hvd.rank() == 0) or not horovod
@@ -192,7 +222,7 @@ def train(
                 tb_writer.add_figure(
                     tag="inference",
                     figure=visualize_latents(
-                        vis_images.to(device), boxes=vis_boxes, model=model
+                        images.detach().to(device), boxes=boxes.detach(), model=model
                     ),
                     global_step=global_step,
                 )
