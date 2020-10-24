@@ -1,26 +1,14 @@
 """Modeling utils."""
-from typing import Callable, Dict, Union
+from typing import Union
 
 import numpy as np
 import pyro
 import torch
+import torch.nn as nn
 import torch.nn.functional as functional
 from pyro.optim import PyroOptim
 from pyssd.data.bboxes import corner_bbox_to_center_bbox
-
-
-def lr_callable(
-    default_lr: float = 1e-3, **param_lrs
-) -> Callable[[str, str], Dict[str, float]]:
-    """Prepare callable for optimizer with default lr."""
-
-    def per_param_callable(module_name: str, param_name: str) -> Dict[str, float]:
-        for key, value in param_lrs.items():
-            if key in param_name or key in module_name:
-                return {"lr": value}
-        return {"lr": default_lr}
-
-    return per_param_callable
+from torch.utils.tensorboard import SummaryWriter
 
 
 def corner_to_center_target_transform(
@@ -78,3 +66,28 @@ class HorovodOptimizer(PyroOptim):
         # Sort by name to ensure deterministic processing order.
         params = sorted(params, key=pyro.get_param_store().param_name)
         super().__call__(params, *args, **kwargs)
+
+
+def get_activation_visualization_hook(
+    tb_writer: SummaryWriter, module_name: str, global_step: int
+):
+    """Prepare hook for logging activation in TensorBoard."""
+
+    def add_histogram_tuple(output, name):
+        if isinstance(output, (list, tuple)):
+            for idx, tensor in enumerate(output):
+                add_histogram_tuple(tensor, f"{name}_{idx}")
+        else:
+            try:
+                tb_writer.add_histogram(
+                    tag=name,
+                    values=output,
+                    global_step=global_step,
+                )
+            except ValueError as ex:
+                print(f"Error in {name} activation: {ex}")
+
+    def hook(_model: nn.Module, _input: torch.Tensor, output: torch.Tensor):
+        add_histogram_tuple(output, module_name)
+
+    return hook

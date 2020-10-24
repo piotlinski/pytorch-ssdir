@@ -20,5 +20,5 @@ build: ## Build docker image
 
 gpu ?= 3
 ssdir_args ?= ssdir --config-file config.yml train
-run: ## Run model
+ssrun: ## Run model
 	$(DOCKER_RUN) --gpus '"device=$(gpu)"' --shm-size 24G piotrekzie100/dev:ssdir $(ssdir_args)

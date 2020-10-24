@@ -7,12 +7,12 @@ from typing import List
 import click
 import horovod.torch as hvd
 import numpy as np
-import pyro.optim as optim
 import torch
-from pyro.infer import SVI, Trace_ELBO
+from pyro.infer import Trace_ELBO
 from pyssd.config import get_config
 from pyssd.data.datasets import datasets
 from pyssd.data.transforms import TrainDataTransform
+from pyssd.run import PlateauWarmUpLRScheduler
 from torch.utils.data import DataLoader, RandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
@@ -21,7 +21,7 @@ from ssdir import SSDIR
 from ssdir.run.utils import (
     HorovodOptimizer,
     corner_to_center_target_transform,
-    lr_callable,
+    get_activation_visualization_hook,
 )
 from ssdir.run.visualize import visualize_latents
 
@@ -107,6 +107,42 @@ def main(ctx: click.Context):
 @click.option(
     "--vis-step", default=500, help="number of steps between visualization", type=int
 )
+@click.option(
+    "--lr-reduce-patience",
+    default=5,
+    help="number of epochs with no decrease in loss to reduce learning rate",
+    type=int,
+)
+@click.option(
+    "--lr-reduce-skip-epochs",
+    default=20,
+    help="number of epochs to skip when reducing leraning rate",
+    type=int,
+)
+@click.option(
+    "--warmup-steps",
+    default=200,
+    help="number of steps on which learning rate will increase linearly",
+    type=int,
+)
+@click.option(
+    "--track-params/--no-track-params",
+    default=False,
+    help="track model parameters in tensorboard",
+    type=bool,
+)
+@click.option(
+    "--track-gradients/--no-track-gradients",
+    default=False,
+    help="track training gradients",
+    type=bool,
+)
+@click.option(
+    "--track-activations/--no-track-activations",
+    default=False,
+    help="track training activations",
+    type=bool,
+)
 @click.pass_obj
 def train(
     obj,
@@ -124,6 +160,12 @@ def train(
     tb_dir: str,
     logging_step: int,
     vis_step: int,
+    track_params: bool,
+    track_gradients: bool,
+    track_activations: bool,
+    lr_reduce_patience: int,
+    lr_reduce_skip_epochs: int,
+    warmup_steps: int,
 ):
     """Train the model."""
     if horovod:
@@ -146,7 +188,18 @@ def train(
         background=render_background,
         z_present_p_prior=z_present_p_prior,
     ).to(device)
-    optimizer = optim.Adam(lr_callable(lr, ssd=ssd_lr))
+    optimizer = torch.optim.Adam(
+        [
+            {"params": model.filtered_parameters(exclude="ssd")},
+            {"params": model.filtered_parameters(include="ssd"), "lr": ssd_lr},
+        ],
+        lr=lr,
+    )
+    lr_scheduler = PlateauWarmUpLRScheduler(
+        optimizer=optimizer,
+        patience=lr_reduce_patience,
+        warmup_steps=warmup_steps,
+    )
     dataset = datasets[ssd_config.DATA.DATASET](
         f"{ssd_config.ASSETS_DIR}/{ssd_config.DATA.DATASET_DIR}",
         data_transform=TrainDataTransform(ssd_config),
@@ -170,11 +223,7 @@ def train(
         batch_size=bs,
     )
 
-    vis_images = None
-    vis_boxes = None
-
-    loss_fn = Trace_ELBO()
-    svi = SVI(model=model.model, guide=model.guide, optim=optimizer, loss=loss_fn)
+    loss_fn = Trace_ELBO().differentiable_loss
 
     global_step = 0
     logging_losses: List[float] = []
@@ -196,17 +245,23 @@ def train(
 
         for images, boxes, _ in train_loader:
             step_start = time.perf_counter()
+            lr_scheduler.dampen()
             images = images.to(device)
-            loss = svi.step(images)
-            if vis_images is None and vis_boxes is None:
-                vis_images = images.detach()
-                vis_boxes = boxes.detach()
+
+            loss = loss_fn(model.model, model.guide, images)
+
+            if torch.isnan(loss):
+                optimizer.zero_grad()
+                logger.warning("Loss is nan. Skipping...")
+                continue
+
+            loss.backward()
+            optimizer.step()
 
             if horovod:
                 loss = hvd.allreduce(torch.tensor(loss), "loss")
-                loss = loss.item()
 
-            logging_losses.append(loss)
+            logging_losses.append(loss.item())
 
             if global_step % logging_step == 0 and (
                 (horovod and hvd.rank() == 0) or not horovod
@@ -228,9 +283,51 @@ def train(
                     global_step=global_step,
                 )
 
+                for param_group, model_part in zip(
+                    optimizer.param_groups, ["model", "ssd"]
+                ):
+                    tb_writer.add_scalar(
+                        tag=f"lr_{model_part}",
+                        scalar_value=param_group["lr"],
+                        global_step=global_step,
+                    )
+
                 epochs.set_postfix(  # type: ignore
                     step=global_step, loss=logging_loss, its=iter_time
                 )
+
+                for idx, (name, params) in enumerate(model.named_parameters()):
+                    module, *sub, param_type = name.split(".")
+                    layer_string = f"{idx}-{module}_{'-'.join(sub)}"
+                    if track_params and params.requires_grad:
+                        try:
+                            tb_writer.add_histogram(
+                                tag=f"{param_type}/{layer_string}",
+                                values=params,
+                                global_step=global_step,
+                            )
+                        except ValueError as ex:
+                            print(f"Error in {layer_string}: {ex}")
+                    if track_gradients and params.requires_grad:
+                        try:
+                            tb_writer.add_histogram(
+                                tag=f"{param_type}_grad/{layer_string}",
+                                values=params.grad.data,
+                                global_step=global_step,
+                            )
+                        except ValueError as ex:
+                            print(f"Error in {layer_string} grad: {ex}")
+                if track_activations:
+                    for idx, (name, module) in enumerate(model.named_modules()):
+                        module.register_forward_hook(
+                            get_activation_visualization_hook(
+                                tb_writer=tb_writer,
+                                module_name=f"activation/{idx}-{name}",
+                                global_step=global_step,
+                            )
+                        )
+
+            optimizer.zero_grad()
 
             if global_step % vis_step == 0 and (
                 (horovod and hvd.rank() == 0) or not horovod
@@ -239,11 +336,14 @@ def train(
                 tb_writer.add_figure(
                     tag="inference",
                     figure=visualize_latents(
-                        vis_images.to(device), boxes=vis_boxes, model=model
+                        images.detach().to(device), boxes=boxes.detach(), model=model
                     ),
                     global_step=global_step,
                 )
                 model.train()
+
+            if epoch > lr_reduce_skip_epochs:
+                lr_scheduler.step(loss)
 
             global_step += 1
             step_end = time.perf_counter()

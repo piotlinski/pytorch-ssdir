@@ -1,11 +1,14 @@
 """SSDIR encoder, decoder, model and guide declarations."""
-from typing import Optional, Tuple, Union
+from functools import reduce
+from operator import mul
+from typing import Iterator, Optional, Tuple, Union
 
 import pyro
 import pyro.distributions as dist
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
+from pyro import poutine
 from pyssd.config import CfgNode, get_config
 from pyssd.modeling.checkpoint import CheckPointer
 from pyssd.modeling.model import SSD
@@ -304,56 +307,84 @@ class SSDIR(nn.Module):
 
     def model(self, x: torch.Tensor):
         """Pyro model; $$P(x|z)P(z)$$."""
-        pyro.module("decoder", self.decoder)
-        batch_size = x.shape[0]
+        with poutine.scale(scale=1 / reduce(mul, x.shape[1:])):
+            pyro.module("decoder", self.decoder)
+            batch_size = x.shape[0]
 
-        z_what_loc = x.new_zeros(batch_size, self.n_objects, self.z_what_size)
-        z_what_scale = torch.ones_like(z_what_loc)
-        z_where_loc = x.new_full(
-            (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
-        )
-        z_where_scale = torch.full_like(z_where_loc, fill_value=self.z_where_scale_eps)
-        z_present_p = x.new_full(
-            (batch_size, self.n_ssd_features, 1),
-            fill_value=self.z_present_p_prior,
-        )
-        z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
-        z_depth_scale = torch.ones_like(z_depth_loc)
+            z_what_loc = x.new_zeros(batch_size, self.n_objects, self.z_what_size)
+            z_what_scale = torch.ones_like(z_what_loc)
+            z_where_loc = x.new_full(
+                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
+            )
+            z_where_scale = torch.full_like(
+                z_where_loc, fill_value=self.z_where_scale_eps
+            )
+            z_present_p = x.new_full(
+                (batch_size, self.n_ssd_features, 1),
+                fill_value=self.z_present_p_prior,
+            )
+            z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
+            z_depth_scale = torch.ones_like(z_depth_loc)
 
-        with pyro.plate("data", batch_size):
-            z_what = pyro.sample(
-                "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
-            )
-            z_where = pyro.sample(
-                "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
-            )
-            z_present = pyro.sample(
-                "z_present", dist.Bernoulli(z_present_p).to_event(2)
-            )
-            z_depth = pyro.sample(
-                "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
-            )
+            with pyro.plate("data", batch_size):
+                z_what = pyro.sample(
+                    "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
+                )
+                z_where = pyro.sample(
+                    "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
+                )
+                z_present = pyro.sample(
+                    "z_present", dist.Bernoulli(z_present_p).to_event(2)
+                )
+                z_depth = pyro.sample(
+                    "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
+                )
 
-            output = self.decoder((z_what, z_where, z_present, z_depth))
+                output = self.decoder((z_what, z_where, z_present, z_depth))
 
-            pyro.sample(
-                "obs",
-                dist.Bernoulli(output).to_event(3),
-                obs=x,
-            )
+                pyro.sample(
+                    "obs",
+                    dist.Bernoulli(output.view(batch_size, -1)).to_event(1),
+                    obs=x.view(batch_size, -1),
+                )
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
-        pyro.module("encoder", self.encoder)
-        with pyro.plate("data", x.shape[0]):
-            (
-                (z_what_loc, z_what_scale),
-                (z_where_loc, z_where_scale),
-                z_present_p,
-                (z_depth_loc, z_depth_scale),
-            ) = self.encoder(x)
+        with poutine.scale(scale=1 / reduce(mul, x.shape[1:])):
+            pyro.module("encoder", self.encoder)
+            with pyro.plate("data", x.shape[0]):
+                (
+                    (z_what_loc, z_what_scale),
+                    (z_where_loc, z_where_scale),
+                    z_present_p,
+                    (z_depth_loc, z_depth_scale),
+                ) = self.encoder(x)
 
-            pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
-            pyro.sample("z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2))
-            pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
-            pyro.sample("z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2))
+                pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
+                pyro.sample(
+                    "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
+                )
+                pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
+                pyro.sample(
+                    "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
+                )
+
+    def filtered_parameters(
+        self,
+        include: Optional[str] = None,
+        exclude: Optional[str] = None,
+        recurse: bool = True,
+    ) -> Iterator[nn.Parameter]:
+        """Get filtered SSDIR parameters for the optimizer.
+
+        :param include: parameter name part to include
+        :param exclude: parameter name part to exclude
+        :param recurse: iterate recursively through model parameters
+        :return: iterator of filtered parameters
+        """
+        for name, param in self.named_parameters(recurse=recurse):
+            if include is not None and include not in name:
+                continue
+            if exclude is not None and exclude in name:
+                continue
+            yield param
