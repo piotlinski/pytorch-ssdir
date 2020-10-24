@@ -291,6 +291,8 @@ def train(
                                 global_step=global_step,
                             )
 
+            optimizer.zero_grad()
+
             if global_step % vis_step == 0 and (
                 (horovod and hvd.rank() == 0) or not horovod
             ):
