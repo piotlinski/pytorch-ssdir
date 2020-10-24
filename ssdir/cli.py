@@ -119,6 +119,12 @@ def main(ctx: click.Context):
     help="track model parameters in tensorboard",
     type=bool,
 )
+@click.option(
+    "--track-gradients/--no-track-gradients",
+    default=False,
+    help="track training gradients",
+    type=bool,
+)
 @click.pass_obj
 def train(
     obj,
@@ -138,6 +144,7 @@ def train(
     log_step: int,
     vis_step: int,
     track_params: bool,
+    track_gradients: bool,
 ):
     """Train the model."""
     if horovod:
@@ -260,13 +267,20 @@ def train(
                     step=global_step, loss=logging_loss, its=iter_time
                 )
 
-                if track_params:
-                    for idx, (name, params) in enumerate(model.named_parameters()):
-                        module, *sub, param_type = name.split(".")
-                        if params.requires_grad:
+                for idx, (name, params) in enumerate(model.named_parameters()):
+                    module, *sub, param_type = name.split(".")
+                    layer_name = f"{idx}-{module}_{'-'.join(sub)}"
+                    if params.requires_grad:
+                        if track_params:
                             tb_writer.add_histogram(
-                                tag=f"{param_type}/{idx}-{module}_{'-'.join(sub)}",
+                                tag=f"{param_type}/{layer_name}",
                                 values=params,
+                                global_step=global_step,
+                            )
+                        if track_gradients:
+                            tb_writer.add_histogram(
+                                tag=f"{param_type}_grad/{layer_name}",
+                                values=params.grad.data,
                                 global_step=global_step,
                             )
 
