@@ -310,7 +310,7 @@ def train(
                         z_where,
                         z_present,
                         (z_depth_loc, z_depth_scale),
-                    ) = model.encoder(images.detach()).to(device)
+                    ) = model.encoder(images.detach().to(device))
                     tb_writer.add_histogram(
                         tag="latents/z_what_loc",
                         values=z_what_loc,
