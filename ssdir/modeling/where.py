@@ -1,5 +1,4 @@
 """$$z_{where}$$ encoder and decoder."""
-import warnings
 from typing import Tuple
 
 import torch
@@ -119,19 +118,14 @@ class WhereTransformer(nn.Module):
         if where_boxes.numel():
             scaled_boxes = self.scale_boxes(where_boxes)
             theta = self.convert_boxes_to_theta(where_boxes=scaled_boxes)
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message="Default grid_sample and affine_grid behavior has changed ",
-                )
-                grid = functional.affine_grid(
-                    theta=theta,
-                    size=[n_objects, channels, self.image_size, self.image_size],
-                )
-                transformed_images = functional.grid_sample(
-                    input=decoded_images,
-                    grid=grid,
-                )
+            grid = functional.affine_grid(
+                theta=theta,
+                size=[n_objects, channels, self.image_size, self.image_size],
+            )
+            transformed_images = functional.grid_sample(
+                input=decoded_images,
+                grid=grid,
+            )
         else:
             transformed_images = decoded_images.view(
                 -1, channels, self.image_size, self.image_size
