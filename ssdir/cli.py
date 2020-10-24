@@ -113,6 +113,12 @@ def main(ctx: click.Context):
 @click.option(
     "--vis-step", default=500, help="number of steps between visualization", type=int
 )
+@click.option(
+    "--track-params/--no-track-params",
+    default=False,
+    help="track model parameters in tensorboard",
+    type=bool,
+)
 @click.pass_obj
 def train(
     obj,
@@ -131,6 +137,7 @@ def train(
     tb_dir: str,
     log_step: int,
     vis_step: int,
+    track_params: bool,
 ):
     """Train the model."""
     if horovod:
@@ -252,6 +259,16 @@ def train(
                 epochs.set_postfix(  # type: ignore
                     step=global_step, loss=logging_loss, its=iter_time
                 )
+
+                if track_params:
+                    for idx, (name, params) in enumerate(model.named_parameters()):
+                        module, *sub, param_type = name.split(".")
+                        if params.requires_grad:
+                            tb_writer.add_histogram(
+                                tag=f"{param_type}/{idx}-{module}_{'-'.join(sub)}",
+                                values=params,
+                                global_step=global_step,
+                            )
 
             if global_step % vis_step == 0 and (
                 (horovod and hvd.rank() == 0) or not horovod
