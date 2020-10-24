@@ -168,7 +168,7 @@ class Decoder(nn.Module):
         z_where: torch.Tensor,
         z_present: torch.Tensor,
         z_depth: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Render reconstructions and their depths from batch."""
         z_what_shape = z_what.shape
         z_where_shape = z_where.shape
