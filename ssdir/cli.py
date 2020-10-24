@@ -59,10 +59,34 @@ def main(ctx: click.Context):
 
 
 @main.command(help="Train model")
+@click.option(
+    "--ssd-config-file",
+    default="assets/pretrained/simple_multimnist/config.yml",
+    help="ssd config to be used",
+    type=str,
+)
 @click.option("--n-epochs", default=100, help="number of epochs", type=int)
 @click.option("--lr", default=1e-3, help="learning rate", type=float)
 @click.option("--ssd-lr", default=1e-6, help="ssd learning rate", type=float)
 @click.option("--bs", default=4, help="batch size", type=int)
+@click.option(
+    "--lr-red-patience",
+    default=5,
+    help="number of epochs with no decrease in loss to reduce learning rate",
+    type=int,
+)
+@click.option(
+    "--lr-red-skip-epochs",
+    default=20,
+    help="number of epochs to skip when reducing leraning rate",
+    type=int,
+)
+@click.option(
+    "--lr-warmup-steps",
+    default=200,
+    help="number of steps on which learning rate will increase linearly",
+    type=int,
+)
 @click.option("--z-what-size", default=64, help="z_what size", type=int)
 @click.option(
     "--drop/--no-drop",
@@ -78,59 +102,35 @@ def main(ctx: click.Context):
 )
 @click.option("--device", default="cuda", help="device for training", type=str)
 @click.option(
-    "--ssd-config-file",
-    default="assets/pretrained/simple_multimnist/config.yml",
-    help="ssd config to be used",
-    type=str,
-)
-@click.option(
     "--tb-dir",
     default="assets/runs/latest",
     help="folder for storing TB output",
     type=str,
 )
 @click.option(
-    "--logging-step", default=10, help="number of steps between logging", type=int
+    "--log-step", default=10, help="number of steps between logging", type=int
 )
 @click.option(
     "--vis-step", default=500, help="number of steps between visualization", type=int
 )
-@click.option(
-    "--lr-reduce-patience",
-    default=5,
-    help="number of epochs with no decrease in loss to reduce learning rate",
-    type=int,
-)
-@click.option(
-    "--lr-reduce-skip-epochs",
-    default=20,
-    help="number of epochs to skip when reducing leraning rate",
-    type=int,
-)
-@click.option(
-    "--warmup-steps",
-    default=200,
-    help="number of steps on which learning rate will increase linearly",
-    type=int,
-)
 @click.pass_obj
 def train(
     obj,
+    ssd_config_file: str,
     n_epochs: int,
     lr: float,
     ssd_lr: float,
     bs: int,
+    lr_red_patience: int,
+    lr_red_skip_epochs: int,
+    lr_warmup_steps: int,
     z_what_size: int,
     drop: bool,
     horovod: bool,
     device: str,
-    ssd_config_file: str,
     tb_dir: str,
-    logging_step: int,
+    log_step: int,
     vis_step: int,
-    lr_reduce_patience: int,
-    lr_reduce_skip_epochs: int,
-    warmup_steps: int,
 ):
     """Train the model."""
     if horovod:
@@ -158,8 +158,8 @@ def train(
     )
     lr_scheduler = PlateauWarmUpLRScheduler(
         optimizer=optimizer,
-        patience=lr_reduce_patience,
-        warmup_steps=warmup_steps,
+        patience=lr_red_patience,
+        warmup_steps=lr_warmup_steps,
     )
 
     dataset = datasets[ssd_config.DATA.DATASET](
@@ -220,7 +220,7 @@ def train(
 
             logging_losses.append(loss.item())
 
-            if global_step % logging_step == 0 and (
+            if global_step % log_step == 0 and (
                 (horovod and hvd.rank() == 0) or not horovod
             ):
                 logging_loss = (
@@ -266,7 +266,7 @@ def train(
                 )
                 model.train()
 
-            if epoch > lr_reduce_skip_epochs:
+            if epoch > lr_red_skip_epochs:
                 lr_scheduler.step(loss.detach())
 
             global_step += 1
