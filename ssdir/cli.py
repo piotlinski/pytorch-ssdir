@@ -12,6 +12,7 @@ from pyro.infer import Trace_ELBO
 from pyssd.config import get_config
 from pyssd.data.datasets import datasets
 from pyssd.data.transforms import TrainDataTransform
+from pyssd.run import PlateauWarmUpLRScheduler
 from torch.utils.data import DataLoader, RandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
@@ -94,6 +95,24 @@ def main(ctx: click.Context):
 @click.option(
     "--vis-step", default=500, help="number of steps between visualization", type=int
 )
+@click.option(
+    "--lr-reduce-patience",
+    default=5,
+    help="number of epochs with no decrease in loss to reduce learning rate",
+    type=int,
+)
+@click.option(
+    "--lr-reduce-skip-epochs",
+    default=20,
+    help="number of epochs to skip when reducing leraning rate",
+    type=int,
+)
+@click.option(
+    "--warmup-steps",
+    default=200,
+    help="number of steps on which learning rate will increase linearly",
+    type=int,
+)
 @click.pass_obj
 def train(
     obj,
@@ -109,6 +128,9 @@ def train(
     tb_dir: str,
     logging_step: int,
     vis_step: int,
+    lr_reduce_patience: int,
+    lr_reduce_skip_epochs: int,
+    warmup_steps: int,
 ):
     """Train the model."""
     if horovod:
@@ -134,6 +156,12 @@ def train(
         ],
         lr=lr,
     )
+    lr_scheduler = PlateauWarmUpLRScheduler(
+        optimizer=optimizer,
+        patience=lr_reduce_patience,
+        warmup_steps=warmup_steps,
+    )
+
     dataset = datasets[ssd_config.DATA.DATASET](
         f"{ssd_config.ASSETS_DIR}/{ssd_config.DATA.DATASET_DIR}",
         data_transform=TrainDataTransform(ssd_config),
@@ -179,6 +207,7 @@ def train(
 
         for images, boxes, _ in train_loader:
             step_start = time.perf_counter()
+            lr_scheduler.dampen()
             images = images.to(device)
 
             loss = loss_fn(model.model, model.guide, images)
@@ -211,6 +240,15 @@ def train(
                     global_step=global_step,
                 )
 
+                for param_group, model_part in zip(
+                    optimizer.param_groups, ["model", "ssd"]
+                ):
+                    tb_writer.add_scalar(
+                        tag=f"lr_{model_part}",
+                        scalar_value=param_group["lr"],
+                        global_step=global_step,
+                    )
+
                 epochs.set_postfix(  # type: ignore
                     step=global_step, loss=logging_loss, its=iter_time
                 )
@@ -227,6 +265,9 @@ def train(
                     global_step=global_step,
                 )
                 model.train()
+
+            if epoch > lr_reduce_skip_epochs:
+                lr_scheduler.step(loss.detach())
 
             global_step += 1
             step_end = time.perf_counter()
