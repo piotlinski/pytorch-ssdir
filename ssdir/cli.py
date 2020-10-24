@@ -125,6 +125,12 @@ def main(ctx: click.Context):
     help="track training gradients",
     type=bool,
 )
+@click.option(
+    "--track-latents/--no-track-latents",
+    default=False,
+    help="track training latents",
+    type=bool,
+)
 @click.pass_obj
 def train(
     obj,
@@ -145,6 +151,7 @@ def train(
     vis_step: int,
     track_params: bool,
     track_gradients: bool,
+    track_latents: bool,
 ):
     """Train the model."""
     if horovod:
@@ -295,6 +302,43 @@ def train(
                     ),
                     global_step=global_step,
                 )
+                if track_latents:
+                    (
+                        (z_what_loc, z_what_scale),
+                        z_where,
+                        z_present,
+                        (z_depth_loc, z_depth_scale),
+                    ) = model.encoder(images.detach()).to(device)
+                    tb_writer.add_histogram(
+                        tag="latents/z_what_loc",
+                        values=z_what_loc,
+                        global_step=global_step,
+                    )
+                    tb_writer.add_histogram(
+                        tag="latents/z_what_scale",
+                        values=z_what_scale,
+                        global_step=global_step,
+                    )
+                    tb_writer.add_histogram(
+                        tag="latents/z_where_loc",
+                        values=z_where,
+                        global_step=global_step,
+                    )
+                    tb_writer.add_histogram(
+                        tag="latents/z_present_p",
+                        values=z_present,
+                        global_step=global_step,
+                    )
+                    tb_writer.add_histogram(
+                        tag="latents/z_depth_loc",
+                        values=z_depth_loc,
+                        global_step=global_step,
+                    )
+                    tb_writer.add_histogram(
+                        tag="latents/z_depth_scale",
+                        values=z_depth_scale,
+                        global_step=global_step,
+                    )
                 model.train()
 
             if epoch > lr_red_skip_epochs:
