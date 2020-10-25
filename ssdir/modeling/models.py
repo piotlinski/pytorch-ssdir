@@ -102,6 +102,9 @@ class Decoder(nn.Module):
                     )
                 )
             last_img_idx = img_idx + 1
+        indices.append(
+            torch.full(size=(1,), fill_value=last_img_idx, dtype=torch.float)
+        )
         return torch.cat(indices, dim=0)
 
     @staticmethod

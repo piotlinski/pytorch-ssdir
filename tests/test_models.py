@@ -36,9 +36,10 @@ def test_encoder_dimensions(
 def test_reconstruction_indices(ssd_config, n_ssd_features):
     """Verify reconstruction indices calculation."""
     indices = Decoder.reconstruction_indices(ssd_config)
-    assert indices.shape == (n_ssd_features,)
-    assert indices.unique().numel() == sum(
-        features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS
+    assert indices.shape == (n_ssd_features + 1,)
+    assert (
+        indices.unique().numel()
+        == sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS) + 1
     )
     assert (torch.sort(indices)[0] == indices).all()
 
