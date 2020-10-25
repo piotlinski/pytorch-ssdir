@@ -35,7 +35,7 @@ class WhereEncoder(nn.Module):
         )
         self.center_variance = ssd_config.MODEL.CENTER_VARIANCE
         self.size_variance = ssd_config.MODEL.SIZE_VARIANCE
-        self.background_where = nn.Parameter(
+        self.bg_where = nn.Parameter(
             torch.tensor([0.5, 0.5, 1.0, 1.0]), requires_grad=False
         )
 
@@ -61,9 +61,9 @@ class WhereEncoder(nn.Module):
             center_variance=self.center_variance,
             size_variance=self.size_variance,
         )
-        background_where = self.background_where.expand(batch_size, 1, 4)
+        bg_where = self.bg_where.expand(batch_size, 1, 4)
 
-        return torch.cat((where_boxes, background_where), dim=1)
+        return torch.cat((where_boxes, bg_where), dim=1)
 
 
 class WhereTransformer(nn.Module):
