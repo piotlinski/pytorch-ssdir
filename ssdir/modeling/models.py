@@ -1,4 +1,5 @@
 """SSDIR encoder, decoder, model and guide declarations."""
+import warnings
 from functools import reduce
 from operator import mul
 from typing import Iterator, Optional, Tuple, Union
@@ -17,6 +18,20 @@ from ssdir.modeling.depth import DepthEncoder
 from ssdir.modeling.present import PresentEncoder
 from ssdir.modeling.what import WhatDecoder, WhatEncoder
 from ssdir.modeling.where import WhereEncoder, WhereTransformer
+
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "indices was not registered in the param store because requires_grad=False"
+    ),
+)
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "empty_obj_const was not registered in the param store "
+        "because requires_grad=False"
+    ),
+)
 
 
 class Encoder(nn.Module):
@@ -127,7 +142,7 @@ class Decoder(nn.Module):
                 start=start_idx, end=end_idx, dtype=torch.long, device=n_present.device
             )
             indices.append(
-                functional.pad(idx_range, pad=[1, max_objects - chunk_objects])
+                functional.pad(idx_range, pad=[0, max_objects - chunk_objects])
             )
         return torch.cat(indices)
 
@@ -147,7 +162,7 @@ class Decoder(nn.Module):
         images = torch.cat((image_starter, transformed_images), dim=0)
         z_depth = torch.cat((z_depth_starter, z_depth), dim=0)
         max_present = torch.max(n_present)
-        padded_shape = max_present.item() + 1
+        padded_shape = max_present.item()
         indices = self.pad_indices(n_present)
         images = images[indices].view(
             -1,

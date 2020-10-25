@@ -47,15 +47,15 @@ def test_reconstruction_indices(ssd_config, n_ssd_features):
 @pytest.mark.parametrize(
     "n_present, expected",
     [
-        (torch.tensor([1, 3, 2]), torch.tensor([0, 1, 0, 0, 0, 2, 3, 4, 0, 5, 6, 0])),
-        (torch.tensor([1, 2, 0]), torch.tensor([0, 1, 0, 0, 2, 3, 0, 0, 0])),
-        (torch.tensor([3, 0, 1]), torch.tensor([0, 1, 2, 3, 0, 0, 0, 0, 0, 4, 0, 0])),
+        (torch.tensor([1, 3, 2]), torch.tensor([1, 0, 0, 2, 3, 4, 5, 6, 0])),
+        (torch.tensor([1, 2, 0]), torch.tensor([1, 0, 2, 3, 0, 0])),
+        (torch.tensor([3, 0, 1]), torch.tensor([1, 2, 3, 0, 0, 0, 4, 0, 0])),
     ],
 )
 def test_pad_indices(n_present, expected):
     """Verify pad indices calculation."""
     indices = Decoder.pad_indices(n_present)
-    assert indices.shape == (n_present.shape[0] * (torch.max(n_present) + 1),)
+    assert indices.shape == (n_present.shape[0] * (torch.max(n_present)),)
     assert torch.max(indices) == torch.sum(n_present)
     assert (indices == expected).all()
 

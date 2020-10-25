@@ -1,9 +1,18 @@
 """$$z_{depth}$$ encoder"""
+import warnings
 from typing import List, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
+
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "depth_enc.bg_scale was not registered in the param store "
+        "because requires_grad=False"
+    ),
+)
 
 
 class DepthEncoder(nn.Module):

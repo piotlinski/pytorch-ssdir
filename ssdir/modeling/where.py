@@ -1,4 +1,5 @@
 """$$z_{where}$$ encoder and decoder."""
+import warnings
 from typing import Tuple
 
 import torch
@@ -7,6 +8,25 @@ import torch.nn.functional as functional
 from pyssd.data.bboxes import convert_locations_to_boxes
 from pyssd.data.priors import process_prior
 from pyssd.modeling.box_predictors import SSDBoxPredictor
+
+warnings.filterwarnings(
+    "ignore",
+    message="Default grid_sample and affine_grid behavior has changed",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "where_enc.anchors was not registered in the param store "
+        "because requires_grad=False"
+    ),
+)
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "where_enc.bg_where was not registered in the param store "
+        "because requires_grad=False"
+    ),
+)
 
 
 class WhereEncoder(nn.Module):
