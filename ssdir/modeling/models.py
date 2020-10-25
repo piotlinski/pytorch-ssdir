@@ -258,14 +258,18 @@ class SSDIR(nn.Module):
         ssd_checkpointer.load(filename=ssd_model_file)
 
         self.z_what_size = z_what_size
-        self.n_objects = sum(
-            features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS
+        self.n_objects = (
+            sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS) + 1
         )
-        self.n_ssd_features = sum(
-            boxes * features ** 2
-            for features, boxes in zip(
-                ssd_config.DATA.PRIOR.FEATURE_MAPS, ssd_config.DATA.PRIOR.BOXES_PER_LOC
+        self.n_ssd_features = (
+            sum(
+                boxes * features ** 2
+                for features, boxes in zip(
+                    ssd_config.DATA.PRIOR.FEATURE_MAPS,
+                    ssd_config.DATA.PRIOR.BOXES_PER_LOC,
+                )
             )
+            + 1
         )
         self.z_where_scale_eps = z_where_scale_eps
         self.z_present_p_prior = z_present_p_prior

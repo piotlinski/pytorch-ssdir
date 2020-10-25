@@ -165,6 +165,31 @@ def test_ssdir_decoder_forward(
     assert outputs.dtype == torch.float
 
 
+@pytest.mark.parametrize("z_what_size", [2, 4])
+@pytest.mark.parametrize("batch_size", [2, 3])
+@patch("ssdir.modeling.models.CheckPointer")
+@patch("ssdir.modeling.models.SSD")
+def test_ssdir_encoder_decoder_forward(
+    ssd_mock,
+    _checkpointer_mock,
+    z_what_size,
+    batch_size,
+    ssd_model,
+    ssd_config,
+    n_ssd_features,
+):
+    ssd_mock.return_value = ssd_model
+    model = SSDIR(z_what_size=z_what_size, ssd_config=ssd_config, ssd_model_file="test")
+
+    data_shape = (3, *ssd_config.DATA.SHAPE)
+    inputs = torch.rand(batch_size, *data_shape)
+
+    latents = model.encoder_forward(inputs)
+    outputs = model.decoder_forward(latents)
+
+    assert outputs.shape == inputs.shape
+
+
 @patch("ssdir.modeling.models.CheckPointer")
 @patch("ssdir.modeling.models.SSD")
 def test_ssdir_model_guide(ssd_mock, _checkpointer_mock, ssd_model, ssd_config):
