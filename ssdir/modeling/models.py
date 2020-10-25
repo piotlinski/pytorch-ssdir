@@ -33,7 +33,9 @@ class Encoder(nn.Module):
         super().__init__()
         self.ssd_backbone = ssd.backbone
         self.what_enc = WhatEncoder(
-            z_what_size=z_what_size, feature_channels=ssd.backbone.out_channels
+            z_what_size=z_what_size,
+            feature_channels=ssd.backbone.out_channels,
+            feature_maps=ssd.predictor.config.DATA.PRIOR.FEATURE_MAPS,
         )
         self.where_enc = WhereEncoder(ssd_box_predictor=ssd.predictor)
         self.present_enc = PresentEncoder(ssd_box_predictor=ssd.predictor)

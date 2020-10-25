@@ -15,19 +15,23 @@ def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size, grid
         torch.rand(batch_size, feature_channel, grid_size, grid_size)
         for feature_channel in feature_channels
     ]
-    encoder = WhatEncoder(z_what_size=z_what_size, feature_channels=feature_channels)
+    encoder = WhatEncoder(
+        z_what_size=z_what_size,
+        feature_channels=feature_channels,
+        feature_maps=[grid_size] * len(feature_channels),
+    )
     locs, scales = encoder(inputs)
     assert (
         locs.shape
         == scales.shape
-        == (batch_size, len(feature_channels) * grid_size ** 2, z_what_size)
+        == (batch_size, len(feature_channels) * grid_size ** 2 + 1, z_what_size)
     )
 
 
 def test_what_encoder_dtype():
     """Verify what encoder output dtype."""
     inputs = [torch.rand(3, 4, 5, 5)]
-    encoder = WhatEncoder(z_what_size=7, feature_channels=[4])
+    encoder = WhatEncoder(z_what_size=7, feature_channels=[4], feature_maps=[5])
     locs, scales = encoder(inputs)
     assert locs.dtype == torch.float
     assert scales.dtype == torch.float
