@@ -24,19 +24,22 @@ def test_encoder_dimensions(
     ) = encoder(inputs)
     n_objects = sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS)
     assert (
-        z_what_loc.shape == z_what_scale.shape == (batch_size, n_objects, z_what_size)
+        z_what_loc.shape
+        == z_what_scale.shape
+        == (batch_size, n_objects + 1, z_what_size)
     )
-    assert z_where.shape == (batch_size, n_ssd_features, 4)
-    assert z_present.shape == (batch_size, n_ssd_features, 1)
-    assert z_depth_loc.shape == z_depth_scale.shape == (batch_size, n_objects, 1)
+    assert z_where.shape == (batch_size, n_ssd_features + 1, 4)
+    assert z_present.shape == (batch_size, n_ssd_features + 1, 1)
+    assert z_depth_loc.shape == z_depth_scale.shape == (batch_size, n_objects + 1, 1)
 
 
 def test_reconstruction_indices(ssd_config, n_ssd_features):
     """Verify reconstruction indices calculation."""
     indices = Decoder.reconstruction_indices(ssd_config)
-    assert indices.shape == (n_ssd_features,)
-    assert indices.unique().numel() == sum(
-        features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS
+    assert indices.shape == (n_ssd_features + 1,)
+    assert (
+        indices.unique().numel()
+        == sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS) + 1
     )
     assert (torch.sort(indices)[0] == indices).all()
 
@@ -44,15 +47,15 @@ def test_reconstruction_indices(ssd_config, n_ssd_features):
 @pytest.mark.parametrize(
     "n_present, expected",
     [
-        (torch.tensor([1, 3, 2]), torch.tensor([0, 1, 0, 0, 0, 2, 3, 4, 0, 5, 6, 0])),
-        (torch.tensor([1, 2, 0]), torch.tensor([0, 1, 0, 0, 2, 3, 0, 0, 0])),
-        (torch.tensor([3, 0, 1]), torch.tensor([0, 1, 2, 3, 0, 0, 0, 0, 0, 4, 0, 0])),
+        (torch.tensor([1, 3, 2]), torch.tensor([1, 0, 0, 2, 3, 4, 5, 6, 0])),
+        (torch.tensor([1, 2, 0]), torch.tensor([1, 0, 2, 3, 0, 0])),
+        (torch.tensor([3, 0, 1]), torch.tensor([1, 2, 3, 0, 0, 0, 4, 0, 0])),
     ],
 )
 def test_pad_indices(n_present, expected):
     """Verify pad indices calculation."""
     indices = Decoder.pad_indices(n_present)
-    assert indices.shape == (n_present.shape[0] * (torch.max(n_present) + 1),)
+    assert indices.shape == (n_present.shape[0] * (torch.max(n_present)),)
     assert torch.max(indices) == torch.sum(n_present)
     assert (indices == expected).all()
 
@@ -84,10 +87,10 @@ def test_decoder_dimensions(batch_size, ssd_model, ssd_config, n_ssd_features):
     """Verify decoder output dimensions."""
     n_objects = sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS)
     z_what_size = 3
-    z_what = torch.rand(batch_size, n_objects, z_what_size)
-    z_where = torch.rand(batch_size, n_ssd_features, 4)
-    z_present = torch.randint(0, 100, (batch_size, n_ssd_features, 1))
-    z_depth = torch.rand(batch_size, n_objects, 1)
+    z_what = torch.rand(batch_size, n_objects + 1, z_what_size)
+    z_where = torch.rand(batch_size, n_ssd_features + 1, 4)
+    z_present = torch.randint(0, 100, (batch_size, n_ssd_features + 1, 1))
+    z_depth = torch.rand(batch_size, n_objects + 1, 1)
     inputs = (z_what, z_where, z_present, z_depth)
     decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size)
     outputs = decoder(inputs)
@@ -116,13 +119,13 @@ def test_ssdir_encoder_forward(
     latents = model.encoder_forward(inputs)
     z_what, z_where, z_present, z_depth = latents
     n_objects = sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS)
-    assert z_what.shape == (batch_size, n_objects, z_what_size)
+    assert z_what.shape == (batch_size, n_objects + 1, z_what_size)
     assert z_what.dtype == torch.float
-    assert z_where.shape == (batch_size, n_ssd_features, 4)
+    assert z_where.shape == (batch_size, n_ssd_features + 1, 4)
     assert z_where.dtype == torch.float
-    assert z_present.shape == (batch_size, n_ssd_features, 1)
+    assert z_present.shape == (batch_size, n_ssd_features + 1, 1)
     assert z_present.dtype == torch.float
-    assert z_depth.shape == (batch_size, n_objects, 1)
+    assert z_depth.shape == (batch_size, n_objects + 1, 1)
     assert z_depth.dtype == torch.float
 
 
@@ -151,15 +154,40 @@ def test_ssdir_decoder_forward(
     )
 
     n_objects = sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS)
-    z_what = torch.rand(batch_size, n_objects, z_what_size)
-    z_where = torch.rand(batch_size, n_ssd_features, 4)
-    z_present = torch.randint(0, 100, (batch_size, n_ssd_features, 1))
-    z_depth = torch.rand(batch_size, n_objects, 1)
+    z_what = torch.rand(batch_size, n_objects + 1, z_what_size)
+    z_where = torch.rand(batch_size, n_ssd_features + 1, 4)
+    z_present = torch.randint(0, 100, (batch_size, n_ssd_features + 1, 1))
+    z_depth = torch.rand(batch_size, n_objects + 1, 1)
     latents = (z_what, z_where, z_present, z_depth)
     outputs = model.decoder_forward(latents)
     data_shape = (3, *ssd_config.DATA.SHAPE)
     assert outputs.shape == (batch_size, *data_shape)
     assert outputs.dtype == torch.float
+
+
+@pytest.mark.parametrize("z_what_size", [2, 4])
+@pytest.mark.parametrize("batch_size", [2, 3])
+@patch("ssdir.modeling.models.CheckPointer")
+@patch("ssdir.modeling.models.SSD")
+def test_ssdir_encoder_decoder_forward(
+    ssd_mock,
+    _checkpointer_mock,
+    z_what_size,
+    batch_size,
+    ssd_model,
+    ssd_config,
+    n_ssd_features,
+):
+    ssd_mock.return_value = ssd_model
+    model = SSDIR(z_what_size=z_what_size, ssd_config=ssd_config, ssd_model_file="test")
+
+    data_shape = (3, *ssd_config.DATA.SHAPE)
+    inputs = torch.rand(batch_size, *data_shape)
+
+    latents = model.encoder_forward(inputs)
+    outputs = model.decoder_forward(latents)
+
+    assert outputs.shape == inputs.shape
 
 
 @patch("ssdir.modeling.models.CheckPointer")

@@ -1,7 +1,6 @@
 """Command Line Interface."""
 import logging
 import time
-import warnings
 from typing import List
 
 import click
@@ -22,32 +21,6 @@ from ssdir.run.utils import HorovodOptimizer, corner_to_center_target_transform
 from ssdir.run.visualize import visualize_latents
 
 logger = logging.getLogger(__name__)
-
-
-warnings.filterwarnings(
-    "ignore",
-    message="Default grid_sample and affine_grid behavior has changed",
-)
-warnings.filterwarnings(
-    "ignore",
-    message=(
-        "where_enc.anchors was not registered in the param store "
-        "because requires_grad=False"
-    ),
-)
-warnings.filterwarnings(
-    "ignore",
-    message=(
-        "indices was not registered in the param store because requires_grad=False"
-    ),
-)
-warnings.filterwarnings(
-    "ignore",
-    message=(
-        "empty_obj_const was not registered in the param store "
-        "because requires_grad=False"
-    ),
-)
 
 
 @click.group(help="SSDIR")

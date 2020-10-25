@@ -1,9 +1,18 @@
 """$$z_{depth}$$ encoder"""
+import warnings
 from typing import List, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
+
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "depth_enc.bg_scale was not registered in the param store "
+        "because requires_grad=False"
+    ),
+)
 
 
 class DepthEncoder(nn.Module):
@@ -14,6 +23,7 @@ class DepthEncoder(nn.Module):
         self.feature_channels = feature_channels
         self.loc_encoders = self._build_depth_encoders()
         self.scale_encoders = self._build_depth_encoders()
+        self.bg_scale = nn.Parameter(torch.tensor([0.2]), requires_grad=False)
 
     def _build_depth_encoders(self) -> nn.ModuleList:
         """Build conv layers list for encoding backbone output."""
@@ -58,4 +68,8 @@ class DepthEncoder(nn.Module):
         locs = torch.cat(locs, dim=1)
         scales = torch.cat(scales, dim=1)
 
-        return locs, scales
+        bg_locs, _ = torch.min(locs, dim=1)
+        bg_locs = bg_locs.unsqueeze(1) - 1e-3
+        bg_scales = self.bg_scale.expand(batch_size, 1, 1)
+
+        return torch.cat((locs, bg_locs), dim=1), torch.cat((scales, bg_scales), dim=1)

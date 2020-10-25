@@ -1,4 +1,5 @@
 """SSDIR encoder, decoder, model and guide declarations."""
+import warnings
 from functools import reduce
 from operator import mul
 from typing import Iterator, Optional, Tuple, Union
@@ -18,6 +19,20 @@ from ssdir.modeling.present import PresentEncoder
 from ssdir.modeling.what import WhatDecoder, WhatEncoder
 from ssdir.modeling.where import WhereEncoder, WhereTransformer
 
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "indices was not registered in the param store because requires_grad=False"
+    ),
+)
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        "empty_obj_const was not registered in the param store "
+        "because requires_grad=False"
+    ),
+)
+
 
 class Encoder(nn.Module):
     """Module encoding input image to latent representation.
@@ -33,7 +48,9 @@ class Encoder(nn.Module):
         super().__init__()
         self.ssd_backbone = ssd.backbone
         self.what_enc = WhatEncoder(
-            z_what_size=z_what_size, feature_channels=ssd.backbone.out_channels
+            z_what_size=z_what_size,
+            feature_channels=ssd.backbone.out_channels,
+            feature_maps=ssd.predictor.config.DATA.PRIOR.FEATURE_MAPS,
         )
         self.where_enc = WhereEncoder(ssd_box_predictor=ssd.predictor)
         self.present_enc = PresentEncoder(ssd_box_predictor=ssd.predictor)
@@ -100,6 +117,9 @@ class Decoder(nn.Module):
                     )
                 )
             last_img_idx = img_idx + 1
+        indices.append(
+            torch.full(size=(1,), fill_value=last_img_idx, dtype=torch.float)
+        )
         return torch.cat(indices, dim=0)
 
     @staticmethod
@@ -122,7 +142,7 @@ class Decoder(nn.Module):
                 start=start_idx, end=end_idx, dtype=torch.long, device=n_present.device
             )
             indices.append(
-                functional.pad(idx_range, pad=[1, max_objects - chunk_objects])
+                functional.pad(idx_range, pad=[0, max_objects - chunk_objects])
             )
         return torch.cat(indices)
 
@@ -142,7 +162,7 @@ class Decoder(nn.Module):
         images = torch.cat((image_starter, transformed_images), dim=0)
         z_depth = torch.cat((z_depth_starter, z_depth), dim=0)
         max_present = torch.max(n_present)
-        padded_shape = max_present.item() + 1
+        padded_shape = max_present.item()
         indices = self.pad_indices(n_present)
         images = images[indices].view(
             -1,
@@ -253,14 +273,18 @@ class SSDIR(nn.Module):
         ssd_checkpointer.load(filename=ssd_model_file)
 
         self.z_what_size = z_what_size
-        self.n_objects = sum(
-            features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS
+        self.n_objects = (
+            sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS) + 1
         )
-        self.n_ssd_features = sum(
-            boxes * features ** 2
-            for features, boxes in zip(
-                ssd_config.DATA.PRIOR.FEATURE_MAPS, ssd_config.DATA.PRIOR.BOXES_PER_LOC
+        self.n_ssd_features = (
+            sum(
+                boxes * features ** 2
+                for features, boxes in zip(
+                    ssd_config.DATA.PRIOR.FEATURE_MAPS,
+                    ssd_config.DATA.PRIOR.BOXES_PER_LOC,
+                )
             )
+            + 1
         )
         self.z_where_scale_eps = z_where_scale_eps
         self.z_present_p_prior = z_present_p_prior
