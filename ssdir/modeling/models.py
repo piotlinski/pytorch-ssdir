@@ -317,6 +317,11 @@ class SSDIR(nn.Module):
         outputs = self.decoder(latents)
         return outputs
 
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        """Pass data through the model."""
+        latents = self.encoder_forward(images)
+        return self.decoder_forward(latents)
+
     def model(self, x: torch.Tensor):
         """Pyro model; $$P(x|z)P(z)$$."""
         with poutine.scale(scale=1 / reduce(mul, x.shape[1:])):
