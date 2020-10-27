@@ -6,17 +6,20 @@ help: ## Show this help
 format: ## Run pre-commit hooks to format code
 	 pre-commit run --all-files
 
-args ?=  -n auto -vvv --cov ssdir
-test: ## Run tests
-	pytest $(args)
-
-shell: ## Run poetry shell
-	poetry shell
-
 PYPI_USERNAME ?= trasee_rd
 PYPI_PASSWORD ?=
-build: ## Build docker image
-	@poetry build -f wheel && docker build --build-arg PYPI_USERNAME=${PYPI_USERNAME} --build-arg PYPI_PASSWORD=${PYPI_PASSWORD} -f Dockerfile -t piotrekzie100/dev:ssdir .
+build.dev: ## Build docker development image
+	docker build --build-arg PYPI_USERNAME=${PYPI_USERNAME} --build-arg PYPI_PASSWORD=${PYPI_PASSWORD} -f dockerfiles/Dockerfile.dev -t piotrekzie100/dev:ssdir-dev .
+
+build.prod: ## Build docker production image
+	docker build --build-arg PYPI_USERNAME=${PYPI_USERNAME} --build-arg PYPI_PASSWORD=${PYPI_PASSWORD} -f dockerfiles/Dockerfile.prod -t piotrekzie100/dev:ssdir .
+
+shell: ## Run docker dev shell
+	$(DOCKER_RUN) -it piotrekzie100/dev:ssdir-dev /bin/bash
+
+args ?=  -n auto -vvv --cov ssdir
+test: ## Run tests
+	$(DOCKER_RUN) piotrekzie100/dev:ssdir-dev pytest $(args)
 
 gpu ?= 3
 ssdir_args ?= ssdir --config-file config.yml train
