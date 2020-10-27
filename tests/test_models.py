@@ -169,7 +169,7 @@ def test_ssdir_decoder_forward(
 @pytest.mark.parametrize("batch_size", [2, 3])
 @patch("ssdir.modeling.models.CheckPointer")
 @patch("ssdir.modeling.models.SSD")
-def test_ssdir_encoder_decoder_forward(
+def test_ssdir_forward(
     ssd_mock,
     _checkpointer_mock,
     z_what_size,
@@ -184,8 +184,7 @@ def test_ssdir_encoder_decoder_forward(
     data_shape = (3, *ssd_config.DATA.SHAPE)
     inputs = torch.rand(batch_size, *data_shape)
 
-    latents = model.encoder_forward(inputs)
-    outputs = model.decoder_forward(latents)
+    outputs = model(inputs)
 
     assert outputs.shape == inputs.shape
 
