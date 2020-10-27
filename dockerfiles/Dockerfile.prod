@@ -1,0 +1,57 @@
+ARG PYPI_USERNAME
+ARG PYPI_PASSWORD
+
+# --- BASE IMAGE ---
+FROM python:3.8-slim as builder
+
+ARG PYPI_USERNAME
+ARG PYPI_PASSWORD
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=on \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100 \
+    POETRY_VERSION=1.1.4 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1 \
+    PYSETUP_PATH="/opt/pysetup" \
+    VENV_PATH="/opt/pysetup/.venv" \
+    MPLCONFIGDIR=/tmp/mpl
+
+ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y curl build-essential cmake
+
+RUN curl -sSL https://raw.githubusercontent.com/sdispater/poetry/master/get-poetry.py | python
+
+WORKDIR $PYSETUP_PATH
+COPY poetry.lock pyproject.toml ./
+COPY ssdir ./ssdir
+RUN poetry config repositories.trasee https://pypi.trasee.io/simple/ \
+    && poetry config http-basic.trasee ${PYPI_USERNAME} ${PYPI_PASSWORD}
+RUN poetry build -f wheel
+
+# --- PROD IMAGE ---
+FROM piotrekzie100/horovod:0.20.0-pytorch1.6.0-py38-cuda10.2 as prod
+
+ARG PYPI_USERNAME
+ARG PYPI_PASSWORD
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=on \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100 \
+    PYSETUP_PATH="/opt/pysetup" \
+    VENV_PATH="/opt/pysetup/.venv" \
+    MPLCONFIGDIR=/tmp/mpl
+
+COPY --from=builder $PYSETUP_PATH/dist/*.whl /tmp/dist/
+RUN pip install /tmp/dist/*.whl --extra-index-url=https://${PYPI_USERNAME}:${PYPI_PASSWORD}@pypi.trasee.io/simple
+RUN rm -rf /tmp/dist
+COPY assets/pretrained/ /app/assets/pretrained/
+RUN chmod -R a+rwX /app
+WORKDIR /app
