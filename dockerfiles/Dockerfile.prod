@@ -36,7 +36,7 @@ RUN poetry config repositories.trasee https://pypi.trasee.io/simple/ \
 RUN poetry build -f wheel
 
 # --- PROD IMAGE ---
-FROM piotrekzie100/horovod:0.20.0-pytorch1.6.0-py38-cuda10.2 as prod
+FROM piotrekzie100/horovod:0.20.3-pytorch1.7.0-py38-cuda10.2 as prod
 
 ARG PYPI_USERNAME
 ARG PYPI_PASSWORD
