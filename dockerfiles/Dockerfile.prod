@@ -35,7 +35,10 @@ RUN poetry config repositories.trasee https://pypi.trasee.io/simple/ \
 RUN poetry build -f wheel
 
 # --- PROD IMAGE ---
-FROM piotrekzie100/horovod:0.20.0-pytorch1.6.0-py38-cuda10.2 as prod
+FROM piotrekzie100/horovod:0.20.3-pytorch1.7.0-py38-cuda10.2 as prod
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y libgl1-mesa-glx ffmpeg libsm6 libxext6
 
 ARG PYPI_USERNAME
 ARG PYPI_PASSWORD
@@ -47,7 +50,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DEFAULT_TIMEOUT=100 \
     PYSETUP_PATH="/opt/pysetup" \
     VENV_PATH="/opt/pysetup/.venv" \
-    MPLCONFIGDIR=/tmp/mpl
+    MPLCONFIGDIR=/tmp/mpl \
+    TORCH_HOME="/app/assets/pretrained"
 
 COPY --from=builder $PYSETUP_PATH/dist/*.whl /tmp/dist/
 RUN pip install /tmp/dist/*.whl --extra-index-url=https://${PYPI_USERNAME}:${PYPI_PASSWORD}@pypi.trasee.io/simple
