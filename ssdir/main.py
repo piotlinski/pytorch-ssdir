@@ -20,8 +20,8 @@ def main(hparams):
         ssd = SSD.load_from_checkpoint(checkpoint_path=hparams.ssd_checkpoint, **kwargs)
     else:
         ssd = SSD(**kwargs)
-    if hparams.checkpoint is not None:
-        model = SSDIR.load_from_checkpoint(checkpoint_path=hparams.checkpoint)
+    if hparams.ssdir_checkpoint is not None:
+        model = SSDIR.load_from_checkpoint(checkpoint_path=hparams.ssdir_checkpoint)
     else:
         model = SSDIR(ssd_model=ssd, **kwargs)
 
@@ -59,7 +59,7 @@ def cli():
     parser = ArgumentParser(conflict_handler="resolve")
     parser.add_argument(
         "-c",
-        "--checkpoint",
+        "--ssdir-checkpoint",
         type=str,
         default=None,
         help="Checkpoint to start training from",

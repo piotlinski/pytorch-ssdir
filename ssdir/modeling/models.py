@@ -3,8 +3,10 @@ import warnings
 from argparse import ArgumentParser
 from functools import reduce
 from operator import mul
-from typing import Iterator, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
+import numpy as np
+import PIL.Image as PILImage
 import pyro
 import pyro.distributions as dist
 import pyro.poutine as poutine
@@ -12,6 +14,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
+import wandb
 from pyro.infer import Trace_ELBO
 from pyssd.data.datasets import datasets
 from pyssd.data.transforms import DataTransform, TrainDataTransform
@@ -283,7 +286,9 @@ class SSDIR(pl.LightningModule):
         z_present_p_prior: float = 0.01,
         z_where_prior: float = 0.5,
         drop: bool = True,
-        visualize: bool = True,
+        visualize_inference: bool = True,
+        n_visualize_objects: int = 5,
+        visualize_latents: bool = True,
         **_kwargs,
     ):
         """
@@ -301,7 +306,9 @@ class SSDIR(pl.LightningModule):
         :param z_present_p_prior: present prob prior
         :param z_where_prior: where prior
         :param drop: drop empty objects' latents
-        :param visualize: visualize inference
+        :param visualize_inference: visualize inference
+        :param n_visualize_objects: number of objects to visualize
+        :param visualize_latents: visualize model latents
         """
         super().__init__()
 
@@ -320,7 +327,6 @@ class SSDIR(pl.LightningModule):
         self.image_size = ssd_model.image_size
         self.pixel_mean = ssd_model.pixel_mean
         self.pixel_std = ssd_model.pixel_std
-        print(self.pixel_std)
         self.flip_train = ssd_model.flip_train
         self.augment_colors_train = ssd_model.augment_colors_train
         self.dataset = ssd_model.dataset
@@ -332,7 +338,9 @@ class SSDIR(pl.LightningModule):
         self.z_where_prior = z_where_prior
         self.drop = drop
 
-        self.visualize = visualize
+        self.visualize_inference = visualize_inference
+        self.n_visualize_objects = n_visualize_objects
+        self.visualize_latents = visualize_latents
 
         self.n_objects = (
             sum(features ** 2 for features in ssd_model.backbone.feature_maps) + 1
@@ -448,12 +456,29 @@ class SSDIR(pl.LightningModule):
             action="store_false",
         )
         parser.add_argument(
-            "--visualize",
+            "--visualize-inference",
             default=True,
             action="store_true",
             help="Log visualizations of model predictions",
         )
-        parser.add_argument("--no-visualize", dest="visualize", action="store_false")
+        parser.add_argument(
+            "--no-visualize-inference", dest="visualize_inference", action="store_false"
+        )
+        parser.add_argument(
+            "--n-visualize-objects",
+            type=int,
+            default=5,
+            help="Number of objects to visualize",
+        )
+        parser.add_argument(
+            "--visualize-latents",
+            default=True,
+            action="store_true",
+            help="Log visualizations of model latents",
+        )
+        parser.add_argument(
+            "--no-visualize-latents", dest="visualize_latents", action="store_false"
+        )
         return parser
 
     def encoder_forward(
@@ -572,6 +597,93 @@ class SSDIR(pl.LightningModule):
                 continue
             yield param
 
+    def get_inference_visualization(
+        self,
+        image: torch.Tensor,
+        boxes: torch.Tensor,
+        reconstruction: torch.Tensor,
+        z_where: torch.Tensor,
+    ) -> Tuple[PILImage.Image, Dict[str, Any]]:
+        """Create model inference visualization."""
+        vis_image = PILImage.fromarray(
+            (image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        )
+        vis_reconstruction = PILImage.fromarray(
+            (reconstruction.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        )
+        inference_image = PILImage.new(
+            "RGB",
+            (
+                vis_image.width * 2 + vis_reconstruction.width,
+                max(vis_image.height, vis_reconstruction.height),
+            ),
+        )
+        inference_image.paste(vis_image, (0, 0))
+        inference_image.paste(vis_image, (vis_image.width, 0))
+        inference_image.paste(
+            vis_reconstruction, (vis_image.width + vis_reconstruction.width, 0)
+        )
+        wandb_inference_boxes = {
+            "gt": {
+                "box_data": [
+                    {
+                        "position": {
+                            "middle": (
+                                box[0].int().item() + vis_image.width,
+                                box[1].int().item(),
+                            ),
+                            "width": box[2].int().item(),
+                            "height": box[3].int().item(),
+                        },
+                        "domain": "pixel",
+                        "box_caption": "gt_object",
+                        "class_id": 1,
+                    }
+                    for box in boxes * self.image_size[-1]
+                ],
+                "class_labels": {1: "object"},
+            },
+            "where": {
+                "box_data": [
+                    {
+                        "position": {
+                            "middle": (
+                                box[0].int().item()
+                                + vis_image.width
+                                + vis_reconstruction.width,
+                                box[1].int().item(),
+                            ),
+                            "width": box[2].int().item(),
+                            "height": box[3].int().item(),
+                        },
+                        "domain": "pixel",
+                        "box_caption": "object",
+                        "class_id": 1,
+                    }
+                    for box in z_where * self.image_size[-1]
+                ],
+                "class_labels": {1: "object"},
+            },
+        }
+        return inference_image, wandb_inference_boxes
+
+    def get_latents_visualization(self, sorted_objects: torch.Tensor) -> PILImage.Image:
+        """Get objects reconstructed from latents visualization."""
+        vis_objects = sorted_objects[: self.n_visualize_objects].squeeze(1)
+        object_image = PILImage.new(
+            "RGB",
+            (
+                vis_objects.shape[0] * vis_objects.shape[-1],
+                vis_objects.shape[-2],
+            ),
+        )
+        for idx, obj in enumerate(vis_objects):
+            image = PILImage.fromarray(
+                (obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+            )
+            object_image.paste(image, (idx * image.width, 0))
+        return object_image
+
     def common_run_step(
         self,
         batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
@@ -585,6 +697,72 @@ class SSDIR(pl.LightningModule):
         loss = criterion(self.model, self.guide, images)
 
         self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
+
+        if batch_nb == 0:
+            vis_images = images.detach()
+            vis_boxes = boxes.detach()
+            if self.visualize_latents:
+                with torch.no_grad():
+                    (
+                        (z_what_loc, z_what_scale),
+                        z_where_loc,
+                        z_present_p,
+                        (z_depth_loc, z_depth_scale),
+                    ) = self.encoder(vis_images)
+                latents_dict = {
+                    "z_what_loc": z_what_loc,
+                    "z_what_scale": z_what_scale,
+                    "z_where_loc": z_where_loc,
+                    "z_present_p": z_present_p,
+                    "z_depth_loc": z_depth_loc,
+                    "z_depth_scale": z_depth_scale,
+                }
+                for latent_name, latent in latents_dict.items():
+                    self.logger.experiment.log(
+                        {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())}
+                    )
+            if self.visualize_inference:
+                with torch.no_grad():
+                    latents = self.encoder_forward(vis_images)
+                    z_what, z_where, z_present, z_depth = self.decoder.pad_latents(
+                        latents
+                    )
+                    reconstructions = self.decoder_forward(latents)
+                    objects, depths = self.decoder.reconstruct_objects(
+                        z_what[0], z_where[0], z_present[0], z_depth[0]
+                    )
+                    _, sort_index = torch.sort(depths, dim=0, descending=True)
+                    sorted_objects = objects.gather(
+                        dim=0, index=sort_index.view(-1, 1, 1, 1, 1).expand_as(objects)
+                    )
+
+                (
+                    inference_image,
+                    wandb_inference_boxes,
+                ) = self.get_inference_visualization(
+                    image=vis_images[0],
+                    boxes=vis_boxes[0],
+                    reconstruction=reconstructions[0],
+                    z_where=z_where[0],
+                )
+                self.logger.experiment.log(
+                    {
+                        f"{stage}_inference_image": wandb.Image(
+                            inference_image,
+                            boxes=wandb_inference_boxes,
+                            caption="model inference",
+                        )
+                    }
+                )
+
+                object_image = self.get_latents_visualization(sorted_objects)
+                self.logger.experiment.log(
+                    {
+                        f"{stage}_objects_image": wandb.Image(
+                            object_image, caption="object reconstructions"
+                        )
+                    }
+                )
 
         return loss
 
