@@ -12,13 +12,18 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
+from pyro.infer import Trace_ELBO
 from pyssd.data.datasets import datasets
+from pyssd.data.transforms import DataTransform, TrainDataTransform
 from pyssd.modeling.model import SSD
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data.dataloader import DataLoader
 
 from ssdir.modeling.depth import DepthEncoder
 from ssdir.modeling.present import PresentEncoder
 from ssdir.modeling.what import WhatDecoder, WhatEncoder
 from ssdir.modeling.where import WhereEncoder, WhereTransformer
+from ssdir.run.transforms import corner_to_center_target_transform
 
 warnings.filterwarnings(
     "ignore",
@@ -265,17 +270,14 @@ class SSDIR(pl.LightningModule):
     def __init__(
         self,
         ssd_model: SSD,
-        dataset_name: str,
-        data_dir: str,
         learning_rate: float = 1e-3,
+        ssd_lr_multiplier: float = 1e-3,
         lr_reduce_patience: int = 10,
         lr_warmup_steps: int = 500,
         auto_lr_find: bool = False,
         batch_size: int = 32,
         num_workers: int = 8,
         pin_memory: bool = True,
-        flip_train: bool = False,
-        augment_colors_train: bool = False,
         z_what_size: int = 64,
         z_where_scale_eps: float = 1e-5,
         z_present_p_prior: float = 0.01,
@@ -285,18 +287,15 @@ class SSDIR(pl.LightningModule):
         **_kwargs,
     ):
         """
-        :param dataset_name: used dataset name
-        :param data_dir: dataset data directory path
+        :param ssd_model: trained SSD to use as backbone
         :param learning_rate: learning rate
+        :param ssd_lr_multiplier: ssd learning rate multiplier (learning rate * mult)
         :param lr_reduce_patience: learning rate reduce on plateau patience (epochs)
         :param lr_warmup_steps: number of steps with warmup
         :param auto_lr_find: perform auto lr finding
         :param batch_size: mini-batch size for training
         :param num_workers: number of workers for dataloader
         :param pin_memory: pin memory for training
-        :param flip_train: perform random flipping on train images
-        :param augment_colors_train: perform random colors augmentation on train images
-        :param ssd_model: SSD model to use as backbone
         :param z_what_size: latent what size
         :param z_where_scale_eps: default where scale constant
         :param z_present_p_prior: present prob prior
@@ -309,18 +308,23 @@ class SSDIR(pl.LightningModule):
         self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
         self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop)
 
-        self.dataset = datasets[dataset_name]
-        self.data_dir = data_dir
-
         self.lr = learning_rate
+        self.ssd_lr_multiplier = ssd_lr_multiplier
         self.lr_reduce_patience = lr_reduce_patience
         self.lr_warmup_steps = lr_warmup_steps
         self.auto_lr_find = auto_lr_find
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-        self.flip_train = flip_train
-        self.augment_colors_train = augment_colors_train
+
+        self.image_size = ssd_model.image_size
+        self.pixel_mean = ssd_model.pixel_mean
+        self.pixel_std = ssd_model.pixel_std
+        print(self.pixel_std)
+        self.flip_train = ssd_model.flip_train
+        self.augment_colors_train = ssd_model.augment_colors_train
+        self.dataset = ssd_model.dataset
+        self.data_dir = ssd_model.data_dir
 
         self.z_what_size = z_what_size
         self.z_where_scale_eps = z_where_scale_eps
@@ -363,11 +367,23 @@ class SSDIR(pl.LightningModule):
             help="Learning rate used for training the model",
         )
         parser.add_argument(
+            "--ssd-lr-multiplier",
+            type=float,
+            default=1e-3,
+            help="Learning rate multiplier for training SSD backbone",
+        )
+        parser.add_argument(
             "--lr-reduce-patience",
             type=int,
             default=10,
             help="Number of epochs with no improvement in validation loss "
             "required to reduce the learning rate",
+        )
+        parser.add_argument(
+            "--lr-warmup-steps",
+            type=int,
+            default=500,
+            help="Number of steps taken with lower lr before starting training",
         )
         parser.add_argument(
             "--batch-size",
@@ -388,24 +404,6 @@ class SSDIR(pl.LightningModule):
             help="Pin data in memory while training",
         )
         parser.add_argument("--no-pin-memory", dest="pin_memory", action="store_false")
-        parser.add_argument(
-            "--flip-train",
-            default=False,
-            action="store_true",
-            help="Flip train images during training",
-        )
-        parser.add_argument("--no-flip-train", dest="flip_train", action="store_false")
-        parser.add_argument(
-            "--augment-colors-train",
-            default=False,
-            action="store_true",
-            help="Perform random colors augmentation during training",
-        )
-        parser.add_argument(
-            "--no-augment-colors-train",
-            dest="augment_colors_train",
-            action="store_false",
-        )
         parser.add_argument(
             "--z-what-size", type=int, default=64, help="z_what latent size"
         )
@@ -431,6 +429,24 @@ class SSDIR(pl.LightningModule):
             help="Drop empty objects' latents",
         )
         parser.add_argument("--no-drop", dest="drop", action="store_false")
+        parser.add_argument(
+            "--flip-train",
+            default=False,
+            action="store_true",
+            help="Flip train images during training",
+        )
+        parser.add_argument("--no-flip-train", dest="flip_train", action="store_false")
+        parser.add_argument(
+            "--augment-colors-train",
+            default=False,
+            action="store_true",
+            help="Perform random colors augmentation during training",
+        )
+        parser.add_argument(
+            "--no-augment-colors-train",
+            dest="augment_colors_train",
+            action="store_false",
+        )
         parser.add_argument(
             "--visualize",
             default=True,
@@ -555,3 +571,107 @@ class SSDIR(pl.LightningModule):
             if exclude is not None and exclude in name:
                 continue
             yield param
+
+    def common_run_step(
+        self,
+        batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        batch_nb: int,
+        stage: str,
+    ):
+        """Common model running step for training and validation."""
+        criterion = Trace_ELBO().differentiable_loss
+
+        images, boxes, _ = batch
+        loss = criterion(self.model, self.guide, images)
+
+        self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
+
+        return loss
+
+    def training_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
+    ):
+        """Step for training."""
+        return self.common_run_step(batch, batch_nb, stage="train")
+
+    def validation_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
+    ):
+        """Step for validation."""
+        return self.common_run_step(batch, batch_nb, stage="val")
+
+    def configure_optimizers(self):
+        """Configure training optimizer."""
+        optimizer = torch.optim.Adam(
+            [
+                {"params": self.filtered_parameters(exclude="ssd")},
+                {
+                    "params": self.filtered_parameters(include="ssd"),
+                    "lr": self.lr * self.ssd_lr_multiplier,
+                },
+            ],
+            lr=self.lr,
+        )
+        lr_scheduler = ReduceLROnPlateau(
+            optimizer=optimizer, patience=self.lr_reduce_patience
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": lr_scheduler,
+            "monitor": "val_loss",
+        }
+
+    def optimizer_step(self, optimizer, *args, **kwargs):
+        """Perform optimizer step with warmup."""
+        if self.trainer.global_step < self.lr_warmup_steps and (
+            (not self.auto_lr_find) or (self.auto_lr_find and self.current_epoch > 0)
+        ):
+            lr_scale = min(
+                1.0, float(self.trainer.global_step + 1) / self.lr_warmup_steps
+            )
+            for pg in optimizer.param_groups:
+                pg["lr"] = lr_scale * self.lr
+
+        super().optimizer_step(optimizer=optimizer, *args, **kwargs)
+
+    def train_dataloader(self) -> DataLoader:
+        """Prepare train dataloader."""
+        data_transform = TrainDataTransform(
+            image_size=self.image_size,
+            pixel_mean=self.pixel_mean,
+            pixel_std=self.pixel_std,
+            flip=self.flip_train,
+            augment_colors=self.augment_colors_train,
+        )
+        dataset = self.dataset(
+            self.data_dir,
+            data_transform=data_transform,
+            target_transform=corner_to_center_target_transform,
+            subset="train",
+        )
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+        )
+
+    def val_dataloader(self) -> DataLoader:
+        """Prepare validation dataloader."""
+        data_transform = DataTransform(
+            image_size=self.image_size,
+            pixel_mean=self.pixel_mean,
+            pixel_std=self.pixel_std,
+        )
+        dataset = self.dataset(
+            self.data_dir,
+            data_transform=data_transform,
+            target_transform=corner_to_center_target_transform,
+            subset="test",
+        )
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+        )

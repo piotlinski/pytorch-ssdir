@@ -847,7 +847,7 @@ reference = "trasee"
 
 [[package]]
 name = "pyssd"
-version = "2.1.2"
+version = "2.1.3"
 description = "Single Shot Multi-Box Detector implementation in PyTorch"
 category = "main"
 optional = false
@@ -1419,7 +1419,7 @@ reference = "trasee"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "510089109e907515e91849d54579e5fd2040ac93381da8e868ab05de0a316757"
+content-hash = "3d5a7a2b0cd17bbb279d51cd257117f2097aac8a414d69afee0abfdaa3edfc8b"
 
 [metadata.files]
 absl-py = [
