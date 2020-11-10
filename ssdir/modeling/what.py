@@ -3,7 +3,6 @@ from typing import List, Tuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as functional
 
 
 class WhatEncoder(nn.Module):
@@ -79,7 +78,7 @@ class WhatEncoder(nn.Module):
                 .view(batch_size, -1, self.h_size)
             )
             scales.append(
-                functional.softplus(scale_enc(feature))
+                torch.exp(scale_enc(feature))
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, self.h_size)
@@ -89,9 +88,7 @@ class WhatEncoder(nn.Module):
 
         locs.append(self.bg_loc_merger(torch.cat(bg_locs, dim=1)).unsqueeze(1))
         scales.append(
-            functional.softplus(
-                self.bg_scale_merger(torch.cat(bg_scales, dim=1)).unsqueeze(1)
-            )
+            torch.exp(self.bg_scale_merger(torch.cat(bg_scales, dim=1)).unsqueeze(1))
         )
 
         locs = torch.cat(locs, dim=1)
