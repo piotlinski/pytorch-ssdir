@@ -217,8 +217,8 @@ dmypy.json
 
 # End of https://www.gitignore.io/api/python,pycharm+all,jupyternotebooks
 
-# assets dir
-assets/*
+# data dir
+data/*
 
-# runs dir
-runs/*
+# env file
+.env
