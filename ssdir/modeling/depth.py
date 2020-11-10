@@ -4,7 +4,6 @@ from typing import List, Tuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as functional
 
 warnings.filterwarnings(
     "ignore",
@@ -59,7 +58,7 @@ class DepthEncoder(nn.Module):
                 .view(batch_size, -1, 1)
             )
             scales.append(
-                functional.softplus(scale_encoder(feature))
+                torch.exp(scale_encoder(feature))
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, 1)
