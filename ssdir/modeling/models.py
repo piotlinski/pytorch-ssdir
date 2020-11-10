@@ -1,17 +1,18 @@
 """SSDIR encoder, decoder, model and guide declarations."""
 import warnings
+from argparse import ArgumentParser
 from functools import reduce
 from operator import mul
-from typing import Iterator, Optional, Tuple, Union
+from typing import Iterator, List, Optional, Tuple, Union
 
 import pyro
 import pyro.distributions as dist
 import pyro.poutine as poutine
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from pyssd.config import CfgNode, get_config
-from pyssd.modeling.checkpoint import CheckPointer
+from pyssd.data.datasets import datasets
 from pyssd.modeling.model import SSD
 
 from ssdir.modeling.depth import DepthEncoder
@@ -50,9 +51,14 @@ class Encoder(nn.Module):
         self.what_enc = WhatEncoder(
             z_what_size=z_what_size,
             feature_channels=ssd.backbone.out_channels,
-            feature_maps=ssd.predictor.config.DATA.PRIOR.FEATURE_MAPS,
+            feature_maps=ssd.backbone.feature_maps,
         )
-        self.where_enc = WhereEncoder(ssd_box_predictor=ssd.predictor)
+        self.where_enc = WhereEncoder(
+            ssd_box_predictor=ssd.predictor,
+            ssd_anchors=ssd.anchors,
+            ssd_center_variance=ssd.center_variance,
+            ssd_size_variance=ssd.size_variance,
+        )
         self.present_enc = PresentEncoder(ssd_box_predictor=ssd.predictor)
         self.depth_enc = DepthEncoder(feature_channels=ssd.backbone.out_channels)
 
@@ -89,32 +95,33 @@ class Decoder(nn.Module):
 
     def __init__(self, ssd: SSD, z_what_size: int = 64, drop_empty: bool = True):
         super().__init__()
-        ssd_config = ssd.predictor.config
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
-        self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
+        self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
         self.indices = nn.Parameter(
-            self.reconstruction_indices(ssd_config), requires_grad=False
+            self.reconstruction_indices(
+                feature_maps=ssd.backbone.feature_maps,
+                boxes_per_loc=ssd.backbone.boxes_per_loc,
+            ),
+            requires_grad=False,
         )
         self.drop = drop_empty
         self.empty_obj_const = nn.Parameter(torch.tensor(-1000.0), requires_grad=False)
 
     @staticmethod
-    def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
+    def reconstruction_indices(
+        feature_maps: List[int], boxes_per_loc: List[int]
+    ) -> torch.Tensor:
         """Get indices for reconstructing images.
 
         .. Caters for the difference between z_what, z_depth and z_where, z_present.
         """
         indices = []
         img_idx = last_img_idx = 0
-        for feature_map, boxes_per_loc in zip(
-            ssd_config.DATA.PRIOR.FEATURE_MAPS, ssd_config.DATA.PRIOR.BOXES_PER_LOC
-        ):
+        for feature_map, n_boxes in zip(feature_maps, boxes_per_loc):
             for feature_map_idx in range(feature_map ** 2):
                 img_idx = last_img_idx + feature_map_idx
                 indices.append(
-                    torch.full(
-                        size=(boxes_per_loc,), fill_value=img_idx, dtype=torch.float
-                    )
+                    torch.full(size=(n_boxes,), fill_value=img_idx, dtype=torch.float)
                 )
             last_img_idx = img_idx + 1
         indices.append(
@@ -252,48 +259,186 @@ class Decoder(nn.Module):
         )
 
 
-class SSDIR(nn.Module):
+class SSDIR(pl.LightningModule):
     """Single-Shot Detect, Infer, Repeat."""
 
     def __init__(
         self,
+        ssd_model: SSD,
+        dataset_name: str,
+        data_dir: str,
+        learning_rate: float = 1e-3,
+        lr_reduce_patience: int = 10,
+        lr_warmup_steps: int = 500,
+        auto_lr_find: bool = False,
+        batch_size: int = 32,
+        num_workers: int = 8,
+        pin_memory: bool = True,
+        flip_train: bool = False,
+        augment_colors_train: bool = False,
         z_what_size: int = 64,
-        ssd_config: Optional[CfgNode] = None,
-        ssd_model_file: str = ("checkpoint.pth"),
         z_where_scale_eps: float = 1e-5,
         z_present_p_prior: float = 0.01,
         z_where_prior: float = 0.5,
-        drop_empty: bool = True,
+        drop: bool = True,
+        visualize: bool = True,
+        **_kwargs,
     ):
+        """
+        :param dataset_name: used dataset name
+        :param data_dir: dataset data directory path
+        :param learning_rate: learning rate
+        :param lr_reduce_patience: learning rate reduce on plateau patience (epochs)
+        :param lr_warmup_steps: number of steps with warmup
+        :param auto_lr_find: perform auto lr finding
+        :param batch_size: mini-batch size for training
+        :param num_workers: number of workers for dataloader
+        :param pin_memory: pin memory for training
+        :param flip_train: perform random flipping on train images
+        :param augment_colors_train: perform random colors augmentation on train images
+        :param ssd_model: SSD model to use as backbone
+        :param z_what_size: latent what size
+        :param z_where_scale_eps: default where scale constant
+        :param z_present_p_prior: present prob prior
+        :param z_where_prior: where prior
+        :param drop: drop empty objects' latents
+        :param visualize: visualize inference
+        """
         super().__init__()
-        if ssd_config is None:
-            ssd_config = get_config()
-        ssd_model = SSD(config=ssd_config)
-        ssd_checkpointer = CheckPointer(config=ssd_config, model=ssd_model)
-        ssd_checkpointer.load(filename=ssd_model_file)
+
+        self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
+        self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop)
+
+        self.dataset = datasets[dataset_name]
+        self.data_dir = data_dir
+
+        self.lr = learning_rate
+        self.lr_reduce_patience = lr_reduce_patience
+        self.lr_warmup_steps = lr_warmup_steps
+        self.auto_lr_find = auto_lr_find
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.pin_memory = pin_memory
+        self.flip_train = flip_train
+        self.augment_colors_train = augment_colors_train
 
         self.z_what_size = z_what_size
+        self.z_where_scale_eps = z_where_scale_eps
+        self.z_present_p_prior = z_present_p_prior
+        self.z_where_prior = z_where_prior
+        self.drop = drop
+
+        self.visualize = visualize
+
         self.n_objects = (
-            sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS) + 1
+            sum(features ** 2 for features in ssd_model.backbone.feature_maps) + 1
         )
         self.n_ssd_features = (
             sum(
                 boxes * features ** 2
                 for features, boxes in zip(
-                    ssd_config.DATA.PRIOR.FEATURE_MAPS,
-                    ssd_config.DATA.PRIOR.BOXES_PER_LOC,
+                    ssd_model.backbone.feature_maps, ssd_model.backbone.boxes_per_loc
                 )
             )
             + 1
         )
-        self.z_where_scale_eps = z_where_scale_eps
-        self.z_present_p_prior = z_present_p_prior
-        self.z_where_prior = z_where_prior
 
-        self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
-        self.decoder = Decoder(
-            ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop_empty
+    @staticmethod
+    def add_model_specific_args(parent_parser: ArgumentParser):
+        """Add SSDIR args to parent argument parser."""
+        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+        parser.add_argument(
+            "--dataset-name",
+            type=str,
+            default="MNIST",
+            help=f"Used dataset name. Available: {list(datasets.keys())}",
         )
+        parser.add_argument(
+            "--data-dir", type=str, default="data", help="Dataset files directory"
+        )
+        parser.add_argument(
+            "--learning-rate",
+            type=float,
+            default=1e-3,
+            help="Learning rate used for training the model",
+        )
+        parser.add_argument(
+            "--lr-reduce-patience",
+            type=int,
+            default=10,
+            help="Number of epochs with no improvement in validation loss "
+            "required to reduce the learning rate",
+        )
+        parser.add_argument(
+            "--batch-size",
+            type=int,
+            default=32,
+            help="Mini-batch size used for training the model",
+        )
+        parser.add_argument(
+            "--num-workers",
+            type=int,
+            default=8,
+            help="Number of workers used to load the dataset",
+        )
+        parser.add_argument(
+            "--pin-memory",
+            default=True,
+            action="store_true",
+            help="Pin data in memory while training",
+        )
+        parser.add_argument("--no-pin-memory", dest="pin_memory", action="store_false")
+        parser.add_argument(
+            "--flip-train",
+            default=False,
+            action="store_true",
+            help="Flip train images during training",
+        )
+        parser.add_argument("--no-flip-train", dest="flip_train", action="store_false")
+        parser.add_argument(
+            "--augment-colors-train",
+            default=False,
+            action="store_true",
+            help="Perform random colors augmentation during training",
+        )
+        parser.add_argument(
+            "--no-augment-colors-train",
+            dest="augment_colors_train",
+            action="store_false",
+        )
+        parser.add_argument(
+            "--z-what-size", type=int, default=64, help="z_what latent size"
+        )
+        parser.add_argument(
+            "--z-where-scale-eps",
+            type=float,
+            default=1e-5,
+            help="z_where scale constant",
+        )
+        parser.add_argument(
+            "--z-present-p-prior",
+            type=float,
+            default=0.01,
+            help="z_present probability prior",
+        )
+        parser.add_argument(
+            "--z-where-prior", type=float, default=0.5, help="z_present prior"
+        )
+        parser.add_argument(
+            "--drop",
+            default=True,
+            action="store_true",
+            help="Drop empty objects' latents",
+        )
+        parser.add_argument("--no-drop", dest="drop", action="store_false")
+        parser.add_argument(
+            "--visualize",
+            default=True,
+            action="store_true",
+            help="Log visualizations of model predictions",
+        )
+        parser.add_argument("--no-visualize", dest="visualize", action="store_false")
+        return parser
 
     def encoder_forward(
         self, inputs: torch.Tensor
