@@ -561,25 +561,22 @@ class SSDIR(pl.LightningModule):
         with pyro.plate("data", batch_size):
             z_what_loc = x.new_zeros(batch_size, self.n_objects, self.z_what_size)
             z_what_scale = torch.ones_like(z_what_loc)
-            z_what_numel = self.n_objects * self.z_what_size
 
-            z_where_loc = x.new_full(
-                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
-            )
-            z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_eps
-            )
-            z_where_numel = self.n_ssd_features * 4
+            z_where_loc = x.new_zeros(batch_size, self.n_ssd_features, 4)
+            z_where_scale = torch.ones_like(z_where_loc)
 
             z_present_p = x.new_full(
                 (batch_size, self.n_ssd_features, 1),
                 fill_value=self.z_present_p_prior,
             )
-            z_present_numel = self.n_ssd_features * 1
 
             z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
             z_depth_scale = torch.ones_like(z_depth_loc)
-            z_depth_numel = self.n_objects * 1
+
+            z_what_numel = z_what_loc.numel() / batch_size
+            z_where_numel = z_where_loc.numel() / batch_size
+            z_present_numel = z_present_p.numel() / batch_size
+            z_depth_numel = z_depth_loc.numel() / batch_size
 
             with poutine.scale(scale=self.what_coef / z_what_numel):
                 z_what = pyro.sample(
@@ -605,11 +602,7 @@ class SSDIR(pl.LightningModule):
             output_numel = output.numel() / batch_size
 
             with poutine.scale(scale=self.rec_coef / output_numel):
-                pyro.sample(
-                    "obs",
-                    dist.Bernoulli(output.view(batch_size, -1)).to_event(1),
-                    obs=x.view(batch_size, -1),
-                )
+                pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=x)
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
@@ -797,7 +790,8 @@ class SSDIR(pl.LightningModule):
                 }
                 for latent_name, latent in latents_dict.items():
                     self.logger.experiment.log(
-                        {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())}
+                        {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
+                        step=self.global_step,
                     )
             if self.visualize_inference:
                 with torch.no_grad():
@@ -835,7 +829,8 @@ class SSDIR(pl.LightningModule):
                             boxes=wandb_inference_boxes,
                             caption="model inference",
                         )
-                    }
+                    },
+                    step=self.global_step,
                 )
 
                 object_image = self.get_latents_visualization(sorted_objects)
@@ -844,7 +839,8 @@ class SSDIR(pl.LightningModule):
                         f"{stage}_objects_image": wandb.Image(
                             object_image, caption="object reconstructions"
                         )
-                    }
+                    },
+                    step=self.global_step,
                 )
 
         return loss
@@ -888,8 +884,10 @@ class SSDIR(pl.LightningModule):
             lr_scale = min(
                 1.0, float(self.trainer.global_step + 1) / self.lr_warmup_steps
             )
-            for pg in optimizer.param_groups:
-                pg["lr"] = lr_scale * self.lr
+            for pg, lr in zip(
+                optimizer.param_groups, [self.lr, self.lr * self.ssd_lr_multiplier]
+            ):
+                pg["lr"] = lr_scale * lr
 
         super().optimizer_step(optimizer=optimizer, *args, **kwargs)
 
