@@ -229,7 +229,7 @@ class Decoder(nn.Module):
         else:
             reconstructions = transformed_images.view(
                 -1,
-                z_what_shape[1],
+                z_what_shape[-2],
                 3,
                 self.where_stn.image_size,
                 self.where_stn.image_size,
@@ -565,7 +565,7 @@ class SSDIR(pl.LightningModule):
         pyro.module("decoder", self.decoder)
         batch_size = x.shape[0]
 
-        with pyro.plate("data"):
+        with pyro.plate("data", batch_size):
             z_what_loc = x.new_zeros(batch_size, self.n_objects, self.z_what_size)
             z_what_scale = torch.ones_like(z_what_loc)
             z_what_numel = self.n_objects * self.z_what_size
@@ -633,7 +633,7 @@ class SSDIR(pl.LightningModule):
         pyro.module("encoder", self.encoder)
         batch_size = x.shape[0]
 
-        with pyro.plate("data"):
+        with pyro.plate("data", batch_size):
             (
                 (z_what_loc, z_what_scale),
                 z_where_loc,
@@ -826,8 +826,10 @@ class SSDIR(pl.LightningModule):
                         z_what[0], z_where[0], z_present[0], z_depth[0]
                     )
                     _, sort_index = torch.sort(depths, dim=0, descending=True)
-                    sorted_objects = objects.gather(
-                        dim=0, index=sort_index.view(-1, 1, 1, 1, 1).expand_as(objects)
+                    reshaped_objects = objects.view(-1, 3, *self.image_size)
+                    sorted_objects = reshaped_objects.gather(
+                        dim=0,
+                        index=sort_index.view(-1, 1, 1, 1).expand_as(reshaped_objects),
                     )
                     filtered_z_where = z_where[0][
                         (z_present[0] == 1).expand_as(z_where[0])
