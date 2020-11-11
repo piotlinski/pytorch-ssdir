@@ -8,23 +8,27 @@ from ssdir.modeling.what import WhatDecoder, WhatEncoder
 @pytest.mark.parametrize("z_what_size", [8, 10, 13])
 @pytest.mark.parametrize("feature_channels", [[5], [3, 7], [2, 4, 8]])
 @pytest.mark.parametrize("batch_size", [1, 2, 3])
-@pytest.mark.parametrize("grid_size", [3, 5, 7])
-def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size, grid_size):
+def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size):
     """Verify what encoder z dimensions."""
     inputs = [
         torch.rand(batch_size, feature_channel, grid_size, grid_size)
-        for feature_channel in feature_channels
+        for grid_size, feature_channel in enumerate(feature_channels, start=1)
     ]
     encoder = WhatEncoder(
         z_what_size=z_what_size,
         feature_channels=feature_channels,
-        feature_maps=[grid_size] * len(feature_channels),
+        feature_maps=list(range(1, len(feature_channels) + 1)),
     )
     locs, scales = encoder(inputs)
     assert (
         locs.shape
         == scales.shape
-        == (batch_size, len(feature_channels) * grid_size ** 2 + 1, z_what_size)
+        == (
+            batch_size,
+            sum(grid_size ** 2 for grid_size in range(1, len(feature_channels) + 1))
+            + 1,
+            z_what_size,
+        )
     )
 
 

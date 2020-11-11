@@ -17,8 +17,8 @@ class WhatEncoder(nn.Module):
         self.feature_maps = feature_maps
         self.loc_encoders = self._build_what_encoders()
         self.scale_encoders = self._build_what_encoders()
-        self.bg_loc_encoders, self.bg_loc_merger = self._build_what_bg_encoder()
-        self.bg_scale_encoders, self.bg_scale_merger = self._build_what_bg_encoder()
+        self.bg_loc_encoder = self._build_what_bg_encoder()
+        self.bg_scale_encoder = self._build_what_bg_encoder()
 
     def _build_what_encoders(self) -> nn.ModuleList:
         """Build conv layers list for encoding backbone output."""
@@ -34,23 +34,16 @@ class WhatEncoder(nn.Module):
         ]
         return nn.ModuleList(layers)
 
-    def _build_what_bg_encoder(self) -> Tuple[nn.ModuleList, nn.Module]:
-        """Build conv layers list for encoding background what latent."""
-        conv_layers = [
-            nn.Conv2d(
-                in_channels=channels,
-                out_channels=self.h_size,
-                kernel_size=maps,
-                stride=3,
-                padding=1,
-            )
-            for channels, maps in zip(self.feature_channels, self.feature_maps)
-        ]
-        lin_layer = nn.Linear(
-            in_features=len(self.feature_channels) * self.h_size,
-            out_features=self.h_size,
+    def _build_what_bg_encoder(self) -> nn.Module:
+        """Build layer for encoding background what latent from largest feature map."""
+        feature_idx = self.feature_maps.index(min(self.feature_maps))
+        return nn.Conv2d(
+            in_channels=self.feature_channels[feature_idx],
+            out_channels=self.h_size,
+            kernel_size=3,
+            stride=1,
+            padding=1,
         )
-        return nn.ModuleList(conv_layers), lin_layer
 
     def forward(
         self, features: Tuple[torch.Tensor, ...]
@@ -61,15 +54,11 @@ class WhatEncoder(nn.Module):
         """
         locs = []
         scales = []
-        bg_locs = []
-        bg_scales = []
         batch_size = features[0].shape[0]
-        for feature, loc_enc, scale_enc, bg_loc_enc, bg_scale_enc in zip(
+        for feature, loc_enc, scale_enc in zip(
             features,
             self.loc_encoders,
             self.scale_encoders,
-            self.bg_loc_encoders,
-            self.bg_scale_encoders,
         ):
             locs.append(
                 loc_enc(feature)
@@ -83,12 +72,18 @@ class WhatEncoder(nn.Module):
                 .contiguous()
                 .view(batch_size, -1, self.h_size)
             )
-            bg_locs.append(bg_loc_enc(feature).view(batch_size, -1))
-            bg_scales.append(bg_scale_enc(feature).view(batch_size, -1))
-
-        locs.append(self.bg_loc_merger(torch.cat(bg_locs, dim=1)).unsqueeze(1))
+        bg_feature_idx = self.feature_maps.index(min(self.feature_maps))
+        locs.append(
+            self.bg_loc_encoder(features[bg_feature_idx])
+            .permute(0, 2, 3, 1)
+            .contiguous()
+            .view(batch_size, -1, self.h_size)
+        )
         scales.append(
-            torch.exp(self.bg_scale_merger(torch.cat(bg_scales, dim=1)).unsqueeze(1))
+            torch.exp(self.bg_scale_encoder(features[bg_feature_idx]))
+            .permute(0, 2, 3, 1)
+            .contiguous()
+            .view(batch_size, -1, self.h_size)
         )
 
         locs = torch.cat(locs, dim=1)
