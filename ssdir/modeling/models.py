@@ -1,8 +1,6 @@
 """SSDIR encoder, decoder, model and guide declarations."""
 import warnings
 from argparse import ArgumentParser
-from functools import reduce
-from operator import mul
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
@@ -26,6 +24,7 @@ from ssdir.modeling.depth import DepthEncoder
 from ssdir.modeling.present import PresentEncoder
 from ssdir.modeling.what import WhatDecoder, WhatEncoder
 from ssdir.modeling.where import WhereEncoder, WhereTransformer
+from ssdir.run.loss import per_site_loss
 from ssdir.run.transforms import corner_to_center_target_transform
 
 warnings.filterwarnings(
@@ -231,7 +230,7 @@ class Decoder(nn.Module):
         else:
             reconstructions = transformed_images.view(
                 -1,
-                z_what_shape[1],
+                z_what_shape[-2],
                 3,
                 self.where_stn.image_size,
                 self.where_stn.image_size,
@@ -286,6 +285,11 @@ class SSDIR(pl.LightningModule):
         z_present_p_prior: float = 0.01,
         z_where_prior: float = 0.5,
         drop: bool = True,
+        what_coef: float = 1.0,
+        where_coef: float = 1.0,
+        present_coef: float = 1.0,
+        depth_coef: float = 1.0,
+        rec_coef: float = 1.0,
         visualize_inference: bool = True,
         n_visualize_objects: int = 5,
         visualize_latents: bool = True,
@@ -306,6 +310,11 @@ class SSDIR(pl.LightningModule):
         :param z_present_p_prior: present prob prior
         :param z_where_prior: where prior
         :param drop: drop empty objects' latents
+        :param what_coef: z_what loss component coefficient
+        :param where_coef: z_where loss component coefficient
+        :param present_coef: z_present loss component coefficient
+        :param depth_coef: z_depth loss component coefficient
+        :param rec_coef: reconstruction error component coefficient
         :param visualize_inference: visualize inference
         :param n_visualize_objects: number of objects to visualize
         :param visualize_latents: visualize model latents
@@ -337,6 +346,12 @@ class SSDIR(pl.LightningModule):
         self.z_present_p_prior = z_present_p_prior
         self.z_where_prior = z_where_prior
         self.drop = drop
+
+        self.what_coef = what_coef
+        self.where_coef = where_coef
+        self.present_coef = present_coef
+        self.depth_coef = depth_coef
+        self.rec_coef = rec_coef
 
         self.visualize_inference = visualize_inference
         self.n_visualize_objects = n_visualize_objects
@@ -438,6 +453,36 @@ class SSDIR(pl.LightningModule):
         )
         parser.add_argument("--no-drop", dest="drop", action="store_false")
         parser.add_argument(
+            "--what-coef",
+            type=float,
+            default=1.0,
+            help="z_what loss component coefficient",
+        )
+        parser.add_argument(
+            "--where-coef",
+            type=float,
+            default=1.0,
+            help="z_where loss component coefficient",
+        )
+        parser.add_argument(
+            "--present-coef",
+            type=float,
+            default=1.0,
+            help="z_present loss component coefficient",
+        )
+        parser.add_argument(
+            "--depth-coef",
+            type=float,
+            default=1.0,
+            help="z_depth loss component coefficient",
+        )
+        parser.add_argument(
+            "--rec-coef",
+            type=float,
+            default=1.0,
+            help="Reconstruction error component coefficient",
+        )
+        parser.add_argument(
             "--flip-train",
             default=False,
             action="store_true",
@@ -510,19 +555,15 @@ class SSDIR(pl.LightningModule):
 
     def model(self, x: torch.Tensor):
         """Pyro model; $$P(x|z)P(z)$$."""
-        with poutine.scale(scale=1 / reduce(mul, x.shape[1:])):
-            pyro.module("decoder", self.decoder)
-            batch_size = x.shape[0]
+        pyro.module("decoder", self.decoder)
+        batch_size = x.shape[0]
 
+        with pyro.plate("data", batch_size):
             z_what_loc = x.new_zeros(batch_size, self.n_objects, self.z_what_size)
             z_what_scale = torch.ones_like(z_what_loc)
 
-            z_where_loc = x.new_full(
-                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
-            )
-            z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_eps
-            )
+            z_where_loc = x.new_zeros(batch_size, self.n_ssd_features, 4)
+            z_where_scale = torch.ones_like(z_where_loc)
 
             z_present_p = x.new_full(
                 (batch_size, self.n_ssd_features, 1),
@@ -532,48 +573,70 @@ class SSDIR(pl.LightningModule):
             z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
             z_depth_scale = torch.ones_like(z_depth_loc)
 
-            with pyro.plate("data"):
+            z_what_numel = z_what_loc.numel() / batch_size
+            z_where_numel = z_where_loc.numel() / batch_size
+            z_present_numel = z_present_p.numel() / batch_size
+            z_depth_numel = z_depth_loc.numel() / batch_size
+
+            with poutine.scale(scale=self.what_coef / z_what_numel):
                 z_what = pyro.sample(
                     "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
                 )
+
+            with poutine.scale(scale=self.where_coef / z_where_numel):
                 z_where = pyro.sample(
                     "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
                 )
+
+            with poutine.scale(scale=self.present_coef / z_present_numel):
                 z_present = pyro.sample(
                     "z_present", dist.Bernoulli(z_present_p).to_event(2)
                 )
+
+            with poutine.scale(scale=self.depth_coef / z_depth_numel):
                 z_depth = pyro.sample(
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
 
-                output = self.decoder((z_what, z_where, z_present, z_depth))
+            output = self.decoder((z_what, z_where, z_present, z_depth))
+            output_numel = output.numel() / batch_size
 
-                pyro.sample(
-                    "obs",
-                    dist.Bernoulli(output.view(batch_size, -1)).to_event(1),
-                    obs=x.view(batch_size, -1),
-                )
+            with poutine.scale(scale=self.rec_coef / output_numel):
+                pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=x)
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
-        with poutine.scale(scale=1 / reduce(mul, x.shape[1:])):
-            pyro.module("encoder", self.encoder)
-            with pyro.plate("data"):
-                (
-                    (z_what_loc, z_what_scale),
-                    z_where_loc,
-                    z_present_p,
-                    (z_depth_loc, z_depth_scale),
-                ) = self.encoder(x)
-                z_where_scale = torch.full_like(
-                    z_where_loc, fill_value=self.z_where_scale_eps
-                )
+        pyro.module("encoder", self.encoder)
+        batch_size = x.shape[0]
 
+        with pyro.plate("data", batch_size):
+            (
+                (z_what_loc, z_what_scale),
+                z_where_loc,
+                z_present_p,
+                (z_depth_loc, z_depth_scale),
+            ) = self.encoder(x)
+            z_where_scale = torch.full_like(
+                z_where_loc, fill_value=self.z_where_scale_eps
+            )
+
+            z_what_numel = z_what_loc.numel() / batch_size
+            z_where_numel = z_where_loc.numel() / batch_size
+            z_present_numel = z_present_p.numel() / batch_size
+            z_depth_numel = z_depth_loc.numel() / batch_size
+
+            with poutine.scale(scale=self.what_coef / z_what_numel):
                 pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
+
+            with poutine.scale(scale=self.where_coef / z_where_numel):
                 pyro.sample(
                     "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
                 )
+
+            with poutine.scale(scale=self.present_coef / z_present_numel):
                 pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
+
+            with poutine.scale(scale=self.depth_coef / z_depth_numel):
                 pyro.sample(
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
@@ -596,6 +659,11 @@ class SSDIR(pl.LightningModule):
             if exclude is not None and exclude in name:
                 continue
             yield param
+
+    @property
+    def is_auto_lr_find(self) -> bool:
+        """Flag to show if the model is tuned for lr."""
+        return self.auto_lr_find and self.current_epoch == 0
 
     def get_inference_visualization(
         self,
@@ -698,6 +766,9 @@ class SSDIR(pl.LightningModule):
 
         self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
 
+        for site, site_loss in per_site_loss(self.model, self.guide, images).items():
+            self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
+
         if batch_nb == 0:
             vis_images = images.detach()
             vis_boxes = boxes.detach()
@@ -719,7 +790,8 @@ class SSDIR(pl.LightningModule):
                 }
                 for latent_name, latent in latents_dict.items():
                     self.logger.experiment.log(
-                        {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())}
+                        {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
+                        step=self.global_step,
                     )
             if self.visualize_inference:
                 with torch.no_grad():
@@ -732,9 +804,14 @@ class SSDIR(pl.LightningModule):
                         z_what[0], z_where[0], z_present[0], z_depth[0]
                     )
                     _, sort_index = torch.sort(depths, dim=0, descending=True)
-                    sorted_objects = objects.gather(
-                        dim=0, index=sort_index.view(-1, 1, 1, 1, 1).expand_as(objects)
+                    reshaped_objects = objects.view(-1, 3, *self.image_size)
+                    sorted_objects = reshaped_objects.gather(
+                        dim=0,
+                        index=sort_index.view(-1, 1, 1, 1).expand_as(reshaped_objects),
                     )
+                    filtered_z_where = z_where[0][
+                        (z_present[0] == 1).expand_as(z_where[0])
+                    ].view(-1, z_where.shape[-1])
 
                 (
                     inference_image,
@@ -743,7 +820,7 @@ class SSDIR(pl.LightningModule):
                     image=vis_images[0],
                     boxes=vis_boxes[0],
                     reconstruction=reconstructions[0],
-                    z_where=z_where[0],
+                    z_where=filtered_z_where,
                 )
                 self.logger.experiment.log(
                     {
@@ -752,7 +829,8 @@ class SSDIR(pl.LightningModule):
                             boxes=wandb_inference_boxes,
                             caption="model inference",
                         )
-                    }
+                    },
+                    step=self.global_step,
                 )
 
                 object_image = self.get_latents_visualization(sorted_objects)
@@ -761,7 +839,8 @@ class SSDIR(pl.LightningModule):
                         f"{stage}_objects_image": wandb.Image(
                             object_image, caption="object reconstructions"
                         )
-                    }
+                    },
+                    step=self.global_step,
                 )
 
         return loss
@@ -801,14 +880,14 @@ class SSDIR(pl.LightningModule):
 
     def optimizer_step(self, optimizer, *args, **kwargs):
         """Perform optimizer step with warmup."""
-        if self.trainer.global_step < self.lr_warmup_steps and (
-            (not self.auto_lr_find) or (self.auto_lr_find and self.current_epoch > 0)
-        ):
+        if self.trainer.global_step < self.lr_warmup_steps and not self.is_auto_lr_find:
             lr_scale = min(
                 1.0, float(self.trainer.global_step + 1) / self.lr_warmup_steps
             )
-            for pg in optimizer.param_groups:
-                pg["lr"] = lr_scale * self.lr
+            for pg, lr in zip(
+                optimizer.param_groups, [self.lr, self.lr * self.ssd_lr_multiplier]
+            ):
+                pg["lr"] = lr_scale * lr
 
         super().optimizer_step(optimizer=optimizer, *args, **kwargs)
 
