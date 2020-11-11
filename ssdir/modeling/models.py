@@ -24,6 +24,7 @@ from ssdir.modeling.depth import DepthEncoder
 from ssdir.modeling.present import PresentEncoder
 from ssdir.modeling.what import WhatDecoder, WhatEncoder
 from ssdir.modeling.where import WhereEncoder, WhereTransformer
+from ssdir.run.loss import per_site_loss
 from ssdir.run.transforms import corner_to_center_target_transform
 
 warnings.filterwarnings(
@@ -771,6 +772,9 @@ class SSDIR(pl.LightningModule):
         loss = criterion(self.model, self.guide, images)
 
         self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
+
+        for site, site_loss in per_site_loss(self.model, self.guide, images).items():
+            self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
 
         if batch_nb == 0:
             vis_images = images.detach()
