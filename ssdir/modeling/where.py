@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 from pyssd.data.bboxes import convert_locations_to_boxes
-from pyssd.data.priors import process_prior
 from pyssd.modeling.box_predictors import SSDBoxPredictor
 
 warnings.filterwarnings(
@@ -37,24 +36,18 @@ class WhereEncoder(nn.Module):
        $$exp(hat{hw} * size_variance) = \\frac {hw} {hw_prior}$$
     """
 
-    def __init__(self, ssd_box_predictor: SSDBoxPredictor):
+    def __init__(
+        self,
+        ssd_box_predictor: SSDBoxPredictor,
+        ssd_anchors: torch.Tensor,
+        ssd_center_variance: float,
+        ssd_size_variance: float,
+    ):
         super().__init__()
         self.ssd_loc_reg_headers = ssd_box_predictor.reg_headers
-        ssd_config = ssd_box_predictor.config
-        self.anchors = nn.Parameter(
-            process_prior(
-                image_size=ssd_config.DATA.SHAPE,
-                feature_maps=ssd_config.DATA.PRIOR.FEATURE_MAPS,
-                min_sizes=ssd_config.DATA.PRIOR.MIN_SIZES,
-                max_sizes=ssd_config.DATA.PRIOR.MAX_SIZES,
-                strides=ssd_config.DATA.PRIOR.STRIDES,
-                aspect_ratios=ssd_config.DATA.PRIOR.ASPECT_RATIOS,
-                clip=ssd_config.DATA.PRIOR.CLIP,
-            ),
-            requires_grad=False,
-        )
-        self.center_variance = ssd_config.MODEL.CENTER_VARIANCE
-        self.size_variance = ssd_config.MODEL.SIZE_VARIANCE
+        self.anchors = nn.Parameter(ssd_anchors, requires_grad=False)
+        self.center_variance = ssd_center_variance
+        self.size_variance = ssd_size_variance
         self.bg_where = nn.Parameter(
             torch.tensor([0.5, 0.5, 1.0, 1.0]), requires_grad=False
         )

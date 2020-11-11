@@ -35,13 +35,11 @@ RUN poetry config repositories.trasee https://pypi.trasee.io/simple/ \
 RUN poetry build -f wheel
 
 # --- PROD IMAGE ---
-FROM piotrekzie100/horovod:0.20.3-pytorch1.7.0-py38-cuda10.2 as prod
-
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y libgl1-mesa-glx ffmpeg libsm6 libxext6
+FROM piotrekzie100/pytorch:1.7.0-py38-cuda10.2
 
 ARG PYPI_USERNAME
 ARG PYPI_PASSWORD
+ARG WANDB_API_KEY
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -51,11 +49,18 @@ ENV PYTHONUNBUFFERED=1 \
     PYSETUP_PATH="/opt/pysetup" \
     VENV_PATH="/opt/pysetup/.venv" \
     MPLCONFIGDIR=/tmp/mpl \
-    TORCH_HOME="/app/assets/pretrained"
+    TORCH_HOME="/app/pretrained" \
+    WANDB_API_KEY=${WANDB_API_KEY}
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y gosu libgl1-mesa-glx ffmpeg libsm6 libxext6
 
 COPY --from=builder $PYSETUP_PATH/dist/*.whl /tmp/dist/
 RUN pip install /tmp/dist/*.whl --extra-index-url=https://${PYPI_USERNAME}:${PYPI_PASSWORD}@pypi.trasee.io/simple
 RUN rm -rf /tmp/dist
-COPY assets/pretrained/ /app/assets/pretrained/
-RUN chmod -R a+rwX /app
+
+COPY dockerfiles/entrypoint.sh /usr/local/bin/
+RUN ln -s /usr/local/bin/entrypoint.sh /
+ENTRYPOINT ["entrypoint.sh"]
+
 WORKDIR /app

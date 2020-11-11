@@ -1,23 +1,32 @@
 """SSDIR encoder, decoder, model and guide declarations."""
 import warnings
+from argparse import ArgumentParser
 from functools import reduce
 from operator import mul
-from typing import Iterator, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
+import numpy as np
+import PIL.Image as PILImage
 import pyro
 import pyro.distributions as dist
 import pyro.poutine as poutine
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from pyssd.config import CfgNode, get_config
-from pyssd.modeling.checkpoint import CheckPointer
+import wandb
+from pyro.infer import Trace_ELBO
+from pyssd.data.datasets import datasets
+from pyssd.data.transforms import DataTransform, TrainDataTransform
 from pyssd.modeling.model import SSD
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data.dataloader import DataLoader
 
 from ssdir.modeling.depth import DepthEncoder
 from ssdir.modeling.present import PresentEncoder
 from ssdir.modeling.what import WhatDecoder, WhatEncoder
 from ssdir.modeling.where import WhereEncoder, WhereTransformer
+from ssdir.run.transforms import corner_to_center_target_transform
 
 warnings.filterwarnings(
     "ignore",
@@ -50,9 +59,14 @@ class Encoder(nn.Module):
         self.what_enc = WhatEncoder(
             z_what_size=z_what_size,
             feature_channels=ssd.backbone.out_channels,
-            feature_maps=ssd.predictor.config.DATA.PRIOR.FEATURE_MAPS,
+            feature_maps=ssd.backbone.feature_maps,
         )
-        self.where_enc = WhereEncoder(ssd_box_predictor=ssd.predictor)
+        self.where_enc = WhereEncoder(
+            ssd_box_predictor=ssd.predictor,
+            ssd_anchors=ssd.anchors,
+            ssd_center_variance=ssd.center_variance,
+            ssd_size_variance=ssd.size_variance,
+        )
         self.present_enc = PresentEncoder(ssd_box_predictor=ssd.predictor)
         self.depth_enc = DepthEncoder(feature_channels=ssd.backbone.out_channels)
 
@@ -89,32 +103,33 @@ class Decoder(nn.Module):
 
     def __init__(self, ssd: SSD, z_what_size: int = 64, drop_empty: bool = True):
         super().__init__()
-        ssd_config = ssd.predictor.config
         self.what_dec = WhatDecoder(z_what_size=z_what_size)
-        self.where_stn = WhereTransformer(image_size=ssd_config.DATA.SHAPE[0])
+        self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
         self.indices = nn.Parameter(
-            self.reconstruction_indices(ssd_config), requires_grad=False
+            self.reconstruction_indices(
+                feature_maps=ssd.backbone.feature_maps,
+                boxes_per_loc=ssd.backbone.boxes_per_loc,
+            ),
+            requires_grad=False,
         )
         self.drop = drop_empty
         self.empty_obj_const = nn.Parameter(torch.tensor(-1000.0), requires_grad=False)
 
     @staticmethod
-    def reconstruction_indices(ssd_config: CfgNode) -> torch.Tensor:
+    def reconstruction_indices(
+        feature_maps: List[int], boxes_per_loc: List[int]
+    ) -> torch.Tensor:
         """Get indices for reconstructing images.
 
         .. Caters for the difference between z_what, z_depth and z_where, z_present.
         """
         indices = []
         img_idx = last_img_idx = 0
-        for feature_map, boxes_per_loc in zip(
-            ssd_config.DATA.PRIOR.FEATURE_MAPS, ssd_config.DATA.PRIOR.BOXES_PER_LOC
-        ):
+        for feature_map, n_boxes in zip(feature_maps, boxes_per_loc):
             for feature_map_idx in range(feature_map ** 2):
                 img_idx = last_img_idx + feature_map_idx
                 indices.append(
-                    torch.full(
-                        size=(boxes_per_loc,), fill_value=img_idx, dtype=torch.float
-                    )
+                    torch.full(size=(n_boxes,), fill_value=img_idx, dtype=torch.float)
                 )
             last_img_idx = img_idx + 1
         indices.append(
@@ -252,48 +267,219 @@ class Decoder(nn.Module):
         )
 
 
-class SSDIR(nn.Module):
+class SSDIR(pl.LightningModule):
     """Single-Shot Detect, Infer, Repeat."""
 
     def __init__(
         self,
+        ssd_model: SSD,
+        learning_rate: float = 1e-3,
+        ssd_lr_multiplier: float = 1e-3,
+        lr_reduce_patience: int = 10,
+        lr_warmup_steps: int = 500,
+        auto_lr_find: bool = False,
+        batch_size: int = 32,
+        num_workers: int = 8,
+        pin_memory: bool = True,
         z_what_size: int = 64,
-        ssd_config: Optional[CfgNode] = None,
-        ssd_model_file: str = ("checkpoint.pth"),
         z_where_scale_eps: float = 1e-5,
         z_present_p_prior: float = 0.01,
         z_where_prior: float = 0.5,
-        drop_empty: bool = True,
+        drop: bool = True,
+        visualize_inference: bool = True,
+        n_visualize_objects: int = 5,
+        visualize_latents: bool = True,
+        **_kwargs,
     ):
+        """
+        :param ssd_model: trained SSD to use as backbone
+        :param learning_rate: learning rate
+        :param ssd_lr_multiplier: ssd learning rate multiplier (learning rate * mult)
+        :param lr_reduce_patience: learning rate reduce on plateau patience (epochs)
+        :param lr_warmup_steps: number of steps with warmup
+        :param auto_lr_find: perform auto lr finding
+        :param batch_size: mini-batch size for training
+        :param num_workers: number of workers for dataloader
+        :param pin_memory: pin memory for training
+        :param z_what_size: latent what size
+        :param z_where_scale_eps: default where scale constant
+        :param z_present_p_prior: present prob prior
+        :param z_where_prior: where prior
+        :param drop: drop empty objects' latents
+        :param visualize_inference: visualize inference
+        :param n_visualize_objects: number of objects to visualize
+        :param visualize_latents: visualize model latents
+        """
         super().__init__()
-        if ssd_config is None:
-            ssd_config = get_config()
-        ssd_model = SSD(config=ssd_config)
-        ssd_checkpointer = CheckPointer(config=ssd_config, model=ssd_model)
-        ssd_checkpointer.load(filename=ssd_model_file)
+
+        self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
+        self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop)
+
+        self.lr = learning_rate
+        self.ssd_lr_multiplier = ssd_lr_multiplier
+        self.lr_reduce_patience = lr_reduce_patience
+        self.lr_warmup_steps = lr_warmup_steps
+        self.auto_lr_find = auto_lr_find
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.pin_memory = pin_memory
+
+        self.image_size = ssd_model.image_size
+        self.pixel_mean = ssd_model.pixel_mean
+        self.pixel_std = ssd_model.pixel_std
+        self.flip_train = ssd_model.flip_train
+        self.augment_colors_train = ssd_model.augment_colors_train
+        self.dataset = ssd_model.dataset
+        self.data_dir = ssd_model.data_dir
 
         self.z_what_size = z_what_size
+        self.z_where_scale_eps = z_where_scale_eps
+        self.z_present_p_prior = z_present_p_prior
+        self.z_where_prior = z_where_prior
+        self.drop = drop
+
+        self.visualize_inference = visualize_inference
+        self.n_visualize_objects = n_visualize_objects
+        self.visualize_latents = visualize_latents
+
         self.n_objects = (
-            sum(features ** 2 for features in ssd_config.DATA.PRIOR.FEATURE_MAPS) + 1
+            sum(features ** 2 for features in ssd_model.backbone.feature_maps) + 1
         )
         self.n_ssd_features = (
             sum(
                 boxes * features ** 2
                 for features, boxes in zip(
-                    ssd_config.DATA.PRIOR.FEATURE_MAPS,
-                    ssd_config.DATA.PRIOR.BOXES_PER_LOC,
+                    ssd_model.backbone.feature_maps, ssd_model.backbone.boxes_per_loc
                 )
             )
             + 1
         )
-        self.z_where_scale_eps = z_where_scale_eps
-        self.z_present_p_prior = z_present_p_prior
-        self.z_where_prior = z_where_prior
 
-        self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
-        self.decoder = Decoder(
-            ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop_empty
+    @staticmethod
+    def add_model_specific_args(parent_parser: ArgumentParser):
+        """Add SSDIR args to parent argument parser."""
+        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+        parser.add_argument(
+            "--dataset-name",
+            type=str,
+            default="MNIST",
+            help=f"Used dataset name. Available: {list(datasets.keys())}",
         )
+        parser.add_argument(
+            "--data-dir", type=str, default="data", help="Dataset files directory"
+        )
+        parser.add_argument(
+            "--learning-rate",
+            type=float,
+            default=1e-3,
+            help="Learning rate used for training the model",
+        )
+        parser.add_argument(
+            "--ssd-lr-multiplier",
+            type=float,
+            default=1e-3,
+            help="Learning rate multiplier for training SSD backbone",
+        )
+        parser.add_argument(
+            "--lr-reduce-patience",
+            type=int,
+            default=10,
+            help="Number of epochs with no improvement in validation loss "
+            "required to reduce the learning rate",
+        )
+        parser.add_argument(
+            "--lr-warmup-steps",
+            type=int,
+            default=500,
+            help="Number of steps taken with lower lr before starting training",
+        )
+        parser.add_argument(
+            "--batch-size",
+            type=int,
+            default=32,
+            help="Mini-batch size used for training the model",
+        )
+        parser.add_argument(
+            "--num-workers",
+            type=int,
+            default=8,
+            help="Number of workers used to load the dataset",
+        )
+        parser.add_argument(
+            "--pin-memory",
+            default=True,
+            action="store_true",
+            help="Pin data in memory while training",
+        )
+        parser.add_argument("--no-pin-memory", dest="pin_memory", action="store_false")
+        parser.add_argument(
+            "--z-what-size", type=int, default=64, help="z_what latent size"
+        )
+        parser.add_argument(
+            "--z-where-scale-eps",
+            type=float,
+            default=1e-5,
+            help="z_where scale constant",
+        )
+        parser.add_argument(
+            "--z-present-p-prior",
+            type=float,
+            default=0.01,
+            help="z_present probability prior",
+        )
+        parser.add_argument(
+            "--z-where-prior", type=float, default=0.5, help="z_present prior"
+        )
+        parser.add_argument(
+            "--drop",
+            default=True,
+            action="store_true",
+            help="Drop empty objects' latents",
+        )
+        parser.add_argument("--no-drop", dest="drop", action="store_false")
+        parser.add_argument(
+            "--flip-train",
+            default=False,
+            action="store_true",
+            help="Flip train images during training",
+        )
+        parser.add_argument("--no-flip-train", dest="flip_train", action="store_false")
+        parser.add_argument(
+            "--augment-colors-train",
+            default=False,
+            action="store_true",
+            help="Perform random colors augmentation during training",
+        )
+        parser.add_argument(
+            "--no-augment-colors-train",
+            dest="augment_colors_train",
+            action="store_false",
+        )
+        parser.add_argument(
+            "--visualize-inference",
+            default=True,
+            action="store_true",
+            help="Log visualizations of model predictions",
+        )
+        parser.add_argument(
+            "--no-visualize-inference", dest="visualize_inference", action="store_false"
+        )
+        parser.add_argument(
+            "--n-visualize-objects",
+            type=int,
+            default=5,
+            help="Number of objects to visualize",
+        )
+        parser.add_argument(
+            "--visualize-latents",
+            default=True,
+            action="store_true",
+            help="Log visualizations of model latents",
+        )
+        parser.add_argument(
+            "--no-visualize-latents", dest="visualize_latents", action="store_false"
+        )
+        return parser
 
     def encoder_forward(
         self, inputs: torch.Tensor
@@ -410,3 +596,260 @@ class SSDIR(nn.Module):
             if exclude is not None and exclude in name:
                 continue
             yield param
+
+    def get_inference_visualization(
+        self,
+        image: torch.Tensor,
+        boxes: torch.Tensor,
+        reconstruction: torch.Tensor,
+        z_where: torch.Tensor,
+    ) -> Tuple[PILImage.Image, Dict[str, Any]]:
+        """Create model inference visualization."""
+        vis_image = PILImage.fromarray(
+            (image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        )
+        vis_reconstruction = PILImage.fromarray(
+            (reconstruction.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        )
+        inference_image = PILImage.new(
+            "RGB",
+            (
+                vis_image.width * 2 + vis_reconstruction.width,
+                max(vis_image.height, vis_reconstruction.height),
+            ),
+        )
+        inference_image.paste(vis_image, (0, 0))
+        inference_image.paste(vis_image, (vis_image.width, 0))
+        inference_image.paste(
+            vis_reconstruction, (vis_image.width + vis_reconstruction.width, 0)
+        )
+        wandb_inference_boxes = {
+            "gt": {
+                "box_data": [
+                    {
+                        "position": {
+                            "middle": (
+                                box[0].int().item() + vis_image.width,
+                                box[1].int().item(),
+                            ),
+                            "width": box[2].int().item(),
+                            "height": box[3].int().item(),
+                        },
+                        "domain": "pixel",
+                        "box_caption": "gt_object",
+                        "class_id": 1,
+                    }
+                    for box in boxes * self.image_size[-1]
+                ],
+                "class_labels": {1: "object"},
+            },
+            "where": {
+                "box_data": [
+                    {
+                        "position": {
+                            "middle": (
+                                box[0].int().item()
+                                + vis_image.width
+                                + vis_reconstruction.width,
+                                box[1].int().item(),
+                            ),
+                            "width": box[2].int().item(),
+                            "height": box[3].int().item(),
+                        },
+                        "domain": "pixel",
+                        "box_caption": "object",
+                        "class_id": 1,
+                    }
+                    for box in z_where * self.image_size[-1]
+                ],
+                "class_labels": {1: "object"},
+            },
+        }
+        return inference_image, wandb_inference_boxes
+
+    def get_latents_visualization(self, sorted_objects: torch.Tensor) -> PILImage.Image:
+        """Get objects reconstructed from latents visualization."""
+        vis_objects = sorted_objects[: self.n_visualize_objects].squeeze(1)
+        object_image = PILImage.new(
+            "RGB",
+            (
+                vis_objects.shape[0] * vis_objects.shape[-1],
+                vis_objects.shape[-2],
+            ),
+        )
+        for idx, obj in enumerate(vis_objects):
+            image = PILImage.fromarray(
+                (obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+            )
+            object_image.paste(image, (idx * image.width, 0))
+        return object_image
+
+    def common_run_step(
+        self,
+        batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        batch_nb: int,
+        stage: str,
+    ):
+        """Common model running step for training and validation."""
+        criterion = Trace_ELBO().differentiable_loss
+
+        images, boxes, _ = batch
+        loss = criterion(self.model, self.guide, images)
+
+        self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
+
+        if batch_nb == 0:
+            vis_images = images.detach()
+            vis_boxes = boxes.detach()
+            if self.visualize_latents:
+                with torch.no_grad():
+                    (
+                        (z_what_loc, z_what_scale),
+                        z_where_loc,
+                        z_present_p,
+                        (z_depth_loc, z_depth_scale),
+                    ) = self.encoder(vis_images)
+                latents_dict = {
+                    "z_what_loc": z_what_loc,
+                    "z_what_scale": z_what_scale,
+                    "z_where_loc": z_where_loc,
+                    "z_present_p": z_present_p,
+                    "z_depth_loc": z_depth_loc,
+                    "z_depth_scale": z_depth_scale,
+                }
+                for latent_name, latent in latents_dict.items():
+                    self.logger.experiment.log(
+                        {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())}
+                    )
+            if self.visualize_inference:
+                with torch.no_grad():
+                    latents = self.encoder_forward(vis_images)
+                    z_what, z_where, z_present, z_depth = self.decoder.pad_latents(
+                        latents
+                    )
+                    reconstructions = self.decoder_forward(latents)
+                    objects, depths = self.decoder.reconstruct_objects(
+                        z_what[0], z_where[0], z_present[0], z_depth[0]
+                    )
+                    _, sort_index = torch.sort(depths, dim=0, descending=True)
+                    sorted_objects = objects.gather(
+                        dim=0, index=sort_index.view(-1, 1, 1, 1, 1).expand_as(objects)
+                    )
+
+                (
+                    inference_image,
+                    wandb_inference_boxes,
+                ) = self.get_inference_visualization(
+                    image=vis_images[0],
+                    boxes=vis_boxes[0],
+                    reconstruction=reconstructions[0],
+                    z_where=z_where[0],
+                )
+                self.logger.experiment.log(
+                    {
+                        f"{stage}_inference_image": wandb.Image(
+                            inference_image,
+                            boxes=wandb_inference_boxes,
+                            caption="model inference",
+                        )
+                    }
+                )
+
+                object_image = self.get_latents_visualization(sorted_objects)
+                self.logger.experiment.log(
+                    {
+                        f"{stage}_objects_image": wandb.Image(
+                            object_image, caption="object reconstructions"
+                        )
+                    }
+                )
+
+        return loss
+
+    def training_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
+    ):
+        """Step for training."""
+        return self.common_run_step(batch, batch_nb, stage="train")
+
+    def validation_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
+    ):
+        """Step for validation."""
+        return self.common_run_step(batch, batch_nb, stage="val")
+
+    def configure_optimizers(self):
+        """Configure training optimizer."""
+        optimizer = torch.optim.Adam(
+            [
+                {"params": self.filtered_parameters(exclude="ssd")},
+                {
+                    "params": self.filtered_parameters(include="ssd"),
+                    "lr": self.lr * self.ssd_lr_multiplier,
+                },
+            ],
+            lr=self.lr,
+        )
+        lr_scheduler = ReduceLROnPlateau(
+            optimizer=optimizer, patience=self.lr_reduce_patience
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": lr_scheduler,
+            "monitor": "val_loss",
+        }
+
+    def optimizer_step(self, optimizer, *args, **kwargs):
+        """Perform optimizer step with warmup."""
+        if self.trainer.global_step < self.lr_warmup_steps and (
+            (not self.auto_lr_find) or (self.auto_lr_find and self.current_epoch > 0)
+        ):
+            lr_scale = min(
+                1.0, float(self.trainer.global_step + 1) / self.lr_warmup_steps
+            )
+            for pg in optimizer.param_groups:
+                pg["lr"] = lr_scale * self.lr
+
+        super().optimizer_step(optimizer=optimizer, *args, **kwargs)
+
+    def train_dataloader(self) -> DataLoader:
+        """Prepare train dataloader."""
+        data_transform = TrainDataTransform(
+            image_size=self.image_size,
+            pixel_mean=self.pixel_mean,
+            pixel_std=self.pixel_std,
+            flip=self.flip_train,
+            augment_colors=self.augment_colors_train,
+        )
+        dataset = self.dataset(
+            self.data_dir,
+            data_transform=data_transform,
+            target_transform=corner_to_center_target_transform,
+            subset="train",
+        )
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+        )
+
+    def val_dataloader(self) -> DataLoader:
+        """Prepare validation dataloader."""
+        data_transform = DataTransform(
+            image_size=self.image_size,
+            pixel_mean=self.pixel_mean,
+            pixel_std=self.pixel_std,
+        )
+        dataset = self.dataset(
+            self.data_dir,
+            data_transform=data_transform,
+            target_transform=corner_to_center_target_transform,
+            subset="test",
+        )
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+        )

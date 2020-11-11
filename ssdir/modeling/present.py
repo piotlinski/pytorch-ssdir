@@ -21,7 +21,7 @@ class PresentEncoder(nn.Module):
     def __init__(self, ssd_box_predictor: SSDBoxPredictor):
         super().__init__()
         self.ssd_cls_headers = ssd_box_predictor.cls_headers
-        self.n_classes = ssd_box_predictor.config.DATA.N_CLASSES
+        self.n_classes = ssd_box_predictor.n_classes
         self.bg_present = nn.Parameter(torch.ones(1), requires_grad=False)
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
