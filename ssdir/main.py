@@ -31,6 +31,14 @@ def main(hparams):
         save_top_k=hparams.n_checkpoints,
         mode="min",
     )
+    early_stopping_callback = EarlyStopping(
+        monitor="val_loss", patience=hparams.early_stopping_patience
+    )
+    lr_monitor_callback = LearningRateMonitor(logging_interval="step")
+    callbacks = [checkpoint_callback, lr_monitor_callback]
+    if hparams.early_stopping:
+        callbacks.append(early_stopping_callback)
+
     logger = WandbLogger(
         name=(
             f"{hparams.dataset_name}-"
@@ -41,15 +49,8 @@ def main(hparams):
         project="ssdir",
     )
     logger.watch(model, log=hparams.watch, log_freq=hparams.watch_freq)
-    trainer = Trainer.from_argparse_args(
-        hparams,
-        logger=logger,
-        callbacks=[
-            checkpoint_callback,
-            EarlyStopping(monitor="val_loss"),
-            LearningRateMonitor(logging_interval="step"),
-        ],
-    )
+
+    trainer = Trainer.from_argparse_args(hparams, logger=logger, callbacks=callbacks)
     trainer.tune(model)
     trainer.fit(model)
 
@@ -70,6 +71,21 @@ def cli():
     parser = SSDIR.add_model_specific_args(parser)
     parser.add_argument(
         "--n-checkpoints", type=int, default=3, help="Number of top checkpoints to save"
+    )
+    parser.add_argument(
+        "--early-stopping",
+        default=True,
+        action="store_true",
+        help="Enable early stopping",
+    )
+    parser.add_argument(
+        "--no-early-stopping", dest="early_stopping", action="store_false"
+    )
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=5,
+        help="Number of epochs with no improvements before stopping early",
     )
     parser.add_argument(
         "--watch",
