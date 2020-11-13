@@ -281,7 +281,7 @@ class SSDIR(pl.LightningModule):
         num_workers: int = 8,
         pin_memory: bool = True,
         z_what_size: int = 64,
-        z_where_scale_eps: float = 1e-5,
+        z_where_scale_eps: float = 0.15,
         z_present_p_prior: float = 0.01,
         z_where_prior: float = 0.5,
         drop: bool = True,
@@ -433,7 +433,7 @@ class SSDIR(pl.LightningModule):
         parser.add_argument(
             "--z-where-scale-eps",
             type=float,
-            default=1e-5,
+            default=0.15,
             help="z_where scale constant",
         )
         parser.add_argument(
@@ -562,8 +562,12 @@ class SSDIR(pl.LightningModule):
             z_what_loc = x.new_zeros(batch_size, self.n_objects, self.z_what_size)
             z_what_scale = torch.ones_like(z_what_loc)
 
-            z_where_loc = x.new_zeros(batch_size, self.n_ssd_features, 4)
-            z_where_scale = torch.ones_like(z_where_loc)
+            z_where_loc = x.new_full(
+                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
+            )
+            z_where_scale = torch.full_like(
+                z_where_loc, fill_value=self.z_where_scale_eps
+            )
 
             z_present_p = x.new_full(
                 (batch_size, self.n_ssd_features, 1),
