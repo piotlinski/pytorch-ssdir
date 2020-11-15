@@ -46,7 +46,7 @@ def main(hparams):
             f"bs{hparams.batch_size}-lr{hparams.learning_rate}"
         ),
         save_dir=hparams.default_root_dir,
-        project="pytorch_ssdir",
+        project="ssdir",
     )
     logger.watch(model, log=hparams.watch, log_freq=hparams.watch_freq)
 
