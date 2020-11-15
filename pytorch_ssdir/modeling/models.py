@@ -17,7 +17,7 @@ from pyro.infer import Trace_ELBO
 from pytorch_ssd.data.datasets import datasets
 from pytorch_ssd.data.transforms import DataTransform, TrainDataTransform
 from pytorch_ssd.modeling.model import SSD
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.utils.data.dataloader import DataLoader
 
 from pytorch_ssdir.modeling.depth import DepthEncoder
@@ -274,8 +274,8 @@ class SSDIR(pl.LightningModule):
         ssd_model: SSD,
         learning_rate: float = 1e-3,
         ssd_lr_multiplier: float = 1e-3,
-        lr_reduce_patience: int = 10,
-        lr_warmup_steps: int = 500,
+        warm_restart_epochs: float = 1 / 3,
+        warm_restart_len_mult: int = 2,
         auto_lr_find: bool = False,
         batch_size: int = 32,
         num_workers: int = 8,
@@ -299,8 +299,8 @@ class SSDIR(pl.LightningModule):
         :param ssd_model: trained SSD to use as backbone
         :param learning_rate: learning rate
         :param ssd_lr_multiplier: ssd learning rate multiplier (learning rate * mult)
-        :param lr_reduce_patience: learning rate reduce on plateau patience (epochs)
-        :param lr_warmup_steps: number of steps with warmup
+        :param warm_restart_epochs: number of epochs before resetting learning rate
+        :param warm_restart_len_mult: coef to multiply number of epochs after each reset
         :param auto_lr_find: perform auto lr finding
         :param batch_size: mini-batch size for training
         :param num_workers: number of workers for dataloader
@@ -326,8 +326,8 @@ class SSDIR(pl.LightningModule):
 
         self.lr = learning_rate
         self.ssd_lr_multiplier = ssd_lr_multiplier
-        self.lr_reduce_patience = lr_reduce_patience
-        self.lr_warmup_steps = lr_warmup_steps
+        self.warm_restart_epochs = warm_restart_epochs
+        self.warm_restart_len_mult = warm_restart_len_mult
         self.auto_lr_find = auto_lr_find
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -396,17 +396,16 @@ class SSDIR(pl.LightningModule):
             help="Learning rate multiplier for training SSD backbone",
         )
         parser.add_argument(
-            "--lr-reduce-patience",
-            type=int,
-            default=10,
-            help="Number of epochs with no improvement in validation loss "
-            "required to reduce the learning rate",
+            "--warm-restart-epochs",
+            type=float,
+            default=1 / 3,
+            help="Number of epochs after which a warm restart is performed",
         )
         parser.add_argument(
-            "--lr-warmup-steps",
+            "-warm-restart-len-mult",
             type=int,
-            default=500,
-            help="Number of steps taken with lower lr before starting training",
+            default=2,
+            help="Coef to multiply warm restart epochs after each restart",
         )
         parser.add_argument(
             "--batch-size",
@@ -852,6 +851,10 @@ class SSDIR(pl.LightningModule):
 
     def configure_optimizers(self):
         """Configure training optimizer."""
+        warm_restart_steps = int(
+            len(self.train_dataloader()) * self.warm_restart_epochs
+        )
+
         optimizer = torch.optim.Adam(
             [
                 {"params": self.filtered_parameters(exclude="ssd")},
@@ -862,27 +865,15 @@ class SSDIR(pl.LightningModule):
             ],
             lr=self.lr,
         )
-        lr_scheduler = ReduceLROnPlateau(
-            optimizer=optimizer, patience=self.lr_reduce_patience
+        lr_scheduler = CosineAnnealingWarmRestarts(
+            optimizer=optimizer,
+            T_0=warm_restart_steps,
+            T_mult=self.warm_restart_len_mult,
         )
         return {
             "optimizer": optimizer,
-            "lr_scheduler": lr_scheduler,
-            "monitor": "val_loss",
+            "lr_scheduler": {"scheduler": lr_scheduler, "interval": "step"},
         }
-
-    def optimizer_step(self, optimizer, *args, **kwargs):
-        """Perform optimizer step with warmup."""
-        if self.trainer.global_step < self.lr_warmup_steps and not self.is_auto_lr_find:
-            lr_scale = min(
-                1.0, float(self.trainer.global_step + 1) / self.lr_warmup_steps
-            )
-            for pg, lr in zip(
-                optimizer.param_groups, [self.lr, self.lr * self.ssd_lr_multiplier]
-            ):
-                pg["lr"] = lr_scale * lr
-
-        super().optimizer_step(optimizer=optimizer, *args, **kwargs)
 
     def train_dataloader(self) -> DataLoader:
         """Prepare train dataloader."""
