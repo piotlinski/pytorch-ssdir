@@ -895,6 +895,7 @@ class SSDIR(pl.LightningModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
+            shuffle=True,
         )
 
     def val_dataloader(self) -> DataLoader:
