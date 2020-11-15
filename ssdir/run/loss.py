@@ -1,6 +1,4 @@
 """SSDIR loss."""
-from functools import reduce
-from operator import mul
 from typing import Dict
 
 import pyro.poutine as poutine
@@ -19,7 +17,9 @@ def per_site_loss(model, guide, *args, **kwargs) -> Dict[str, float]:
             if site["type"] == "sample" and "data" not in site["name"]:
                 name = site["name"]
                 elbo = losses.get(name, 0.0)
-                numel = reduce(mul, site["value"].shape[1:])
-                losses[name] = elbo - site["fn"].log_prob(site["value"]).sum() / numel
+                losses[name] = (
+                    elbo
+                    - site["fn"].log_prob(site["value"]).sum() / site["value"].numel()
+                )
 
     return losses
