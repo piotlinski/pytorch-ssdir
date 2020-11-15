@@ -29,7 +29,7 @@ RUN curl -sSL https://raw.githubusercontent.com/sdispater/poetry/master/get-poet
 
 WORKDIR $PYSETUP_PATH
 COPY poetry.lock pyproject.toml ./
-COPY ssdir ./ssdir
+COPY pytorch_ssdir ./pytorch_ssdir
 RUN poetry config repositories.trasee https://pypi.trasee.io/simple/ \
     && poetry config http-basic.trasee ${PYPI_USERNAME} ${PYPI_PASSWORD}
 RUN poetry build -f wheel
