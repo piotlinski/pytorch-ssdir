@@ -21,7 +21,7 @@ build.prod: ## Build docker production image
 shell: ## Run docker dev shell
 	$(DOCKER_RUN) -it $(tag)-dev /bin/bash
 
-args ?=  -n auto -vvv --cov ssdir
+args ?=  -n auto -vvv --cov pytorch_ssdir
 test: ## Run tests
 	poetry run pytest $(args)
 

@@ -4,7 +4,7 @@ from typing import Union
 import numpy as np
 import torch
 import torch.nn.functional as functional
-from pyssd.data.bboxes import corner_bbox_to_center_bbox
+from pytorch_ssd.data.bboxes import corner_bbox_to_center_bbox
 
 
 def corner_to_center_target_transform(

@@ -1,7 +1,7 @@
 """Common tests tools."""
 import pytest
 import torch
-from pyssd.modeling.model import SSD
+from pytorch_ssd.modeling.model import SSD
 
 
 @pytest.fixture
