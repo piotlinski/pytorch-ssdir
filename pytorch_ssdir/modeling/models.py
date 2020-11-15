@@ -402,7 +402,7 @@ class SSDIR(pl.LightningModule):
             help="Number of epochs after which a warm restart is performed",
         )
         parser.add_argument(
-            "-warm-restart-len-mult",
+            "--warm-restart-len-mult",
             type=int,
             default=2,
             help="Coef to multiply warm restart epochs after each restart",
