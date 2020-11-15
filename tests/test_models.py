@@ -3,7 +3,7 @@ import pyro
 import pytest
 import torch
 
-from ssdir.modeling.models import SSDIR, Decoder, Encoder
+from pytorch_ssdir.modeling.models import SSDIR, Decoder, Encoder
 
 
 @pytest.mark.parametrize("z_what_size", [2, 4])

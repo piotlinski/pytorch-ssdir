@@ -14,18 +14,18 @@ import torch.nn as nn
 import torch.nn.functional as functional
 import wandb
 from pyro.infer import Trace_ELBO
-from pyssd.data.datasets import datasets
-from pyssd.data.transforms import DataTransform, TrainDataTransform
-from pyssd.modeling.model import SSD
+from pytorch_ssd.data.datasets import datasets
+from pytorch_ssd.data.transforms import DataTransform, TrainDataTransform
+from pytorch_ssd.modeling.model import SSD
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data.dataloader import DataLoader
 
-from ssdir.modeling.depth import DepthEncoder
-from ssdir.modeling.present import PresentEncoder
-from ssdir.modeling.what import WhatDecoder, WhatEncoder
-from ssdir.modeling.where import WhereEncoder, WhereTransformer
-from ssdir.run.loss import per_site_loss
-from ssdir.run.transforms import corner_to_center_target_transform
+from pytorch_ssdir.modeling.depth import DepthEncoder
+from pytorch_ssdir.modeling.present import PresentEncoder
+from pytorch_ssdir.modeling.what import WhatDecoder, WhatEncoder
+from pytorch_ssdir.modeling.where import WhereEncoder, WhereTransformer
+from pytorch_ssdir.run.loss import per_site_loss
+from pytorch_ssdir.run.transforms import corner_to_center_target_transform
 
 warnings.filterwarnings(
     "ignore",

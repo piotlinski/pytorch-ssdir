@@ -1,7 +1,7 @@
 """Test present modules."""
 import torch
 
-from ssdir.modeling.present import PresentEncoder
+from pytorch_ssdir.modeling.present import PresentEncoder
 
 
 def test_present_encoder_dimensions(ssd_model, ssd_features, n_ssd_features):

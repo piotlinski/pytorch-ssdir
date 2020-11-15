@@ -5,8 +5,8 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from pyssd.data.bboxes import convert_locations_to_boxes
-from pyssd.modeling.box_predictors import SSDBoxPredictor
+from pytorch_ssd.data.bboxes import convert_locations_to_boxes
+from pytorch_ssd.modeling.box_predictors import SSDBoxPredictor
 
 warnings.filterwarnings(
     "ignore",

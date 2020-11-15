@@ -2,7 +2,7 @@
 import pytest
 import torch
 
-from ssdir.modeling.where import WhereEncoder, WhereTransformer
+from pytorch_ssdir.modeling.where import WhereEncoder, WhereTransformer
 
 
 def test_where_encoder_dimensions(ssd_model, ssd_features, n_ssd_features):

@@ -2,7 +2,7 @@
 import pytest
 import torch
 
-from ssdir.modeling.what import WhatDecoder, WhatEncoder
+from pytorch_ssdir.modeling.what import WhatDecoder, WhatEncoder
 
 
 @pytest.mark.parametrize("z_what_size", [8, 10, 13])

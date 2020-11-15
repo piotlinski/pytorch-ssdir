@@ -4,7 +4,7 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
-from pyssd.modeling.box_predictors import SSDBoxPredictor
+from pytorch_ssd.modeling.box_predictors import SSDBoxPredictor
 
 warnings.filterwarnings(
     "ignore",

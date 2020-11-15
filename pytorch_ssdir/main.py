@@ -1,7 +1,6 @@
 """Main function for SSDIR training."""
 from argparse import ArgumentParser
 
-from pyssd.modeling.model import SSD
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import (
     EarlyStopping,
@@ -9,8 +8,9 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
 )
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_ssd.modeling.model import SSD
 
-from ssdir import SSDIR
+from pytorch_ssdir import SSDIR
 
 
 def main(hparams):
@@ -46,7 +46,7 @@ def main(hparams):
             f"bs{hparams.batch_size}-lr{hparams.learning_rate}"
         ),
         save_dir=hparams.default_root_dir,
-        project="ssdir",
+        project="pytorch_ssdir",
     )
     logger.watch(model, log=hparams.watch, log_freq=hparams.watch_freq)
 
@@ -60,7 +60,7 @@ def cli():
     parser = ArgumentParser(conflict_handler="resolve")
     parser.add_argument(
         "-c",
-        "--ssdir-checkpoint",
+        "--pytorch_ssdir-checkpoint",
         type=str,
         default=None,
         help="Checkpoint to start training from",

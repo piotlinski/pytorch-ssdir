@@ -1,4 +1,4 @@
-# SSDIR
+# PyTorch-SSDIR
 
 Single Shot Multi-Box Detect Infer & Repeat implementation in PyTorch
 

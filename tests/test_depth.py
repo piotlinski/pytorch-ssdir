@@ -2,7 +2,7 @@
 import pytest
 import torch
 
-from ssdir.modeling.depth import DepthEncoder
+from pytorch_ssdir.modeling.depth import DepthEncoder
 
 
 @pytest.mark.parametrize("feature_channels", [[5], [3, 7], [2, 4, 8]])
