@@ -60,7 +60,7 @@ def cli():
     parser = ArgumentParser(conflict_handler="resolve")
     parser.add_argument(
         "-c",
-        "--pytorch_ssdir-checkpoint",
+        "--ssdir-checkpoint",
         type=str,
         default=None,
         help="Checkpoint to start training from",
