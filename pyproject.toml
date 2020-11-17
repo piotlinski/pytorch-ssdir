@@ -4,13 +4,9 @@ version = "0.1.0"
 description = "Single Shot Multi-Box Detect Infer & Repeat implementation in PyTorch"
 authors = ["Piotr Zieliński <piotrekzie100@gmail.com>"]
 
-[[tool.poetry.source]]
-name = "trasee"
-url = "https://pypi.trasee.io/simple/"
-
 [tool.poetry.dependencies]
 python = "^3.8"
-pytorch_ssd = { version="1.0.0", source="trasee" }
+pytorch-ssd = "1.0.1"
 pytorch-lightning = "^1.0.5"
 torchvision = "^0.8.1"
 pyro-ppl = "^1.5.0"

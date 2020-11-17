@@ -9,11 +9,6 @@ python-versions = "*"
 [package.dependencies]
 six = "*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "albumentations"
 version = "0.5.1"
@@ -33,11 +28,6 @@ scipy = "*"
 [package.extras]
 tests = ["pytest"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "apipkg"
 version = "1.5"
@@ -46,11 +36,6 @@ category = "dev"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "atomicwrites"
 version = "1.4.0"
@@ -58,11 +43,6 @@ description = "Atomic file writes."
 category = "dev"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "attrs"
@@ -78,11 +58,6 @@ docs = ["furo", "sphinx", "zope.interface"]
 tests = ["coverage[toml] (>=5.0.2)", "hypothesis", "pympler", "pytest (>=4.3.0)", "six", "zope.interface"]
 tests_no_zope = ["coverage[toml] (>=5.0.2)", "hypothesis", "pympler", "pytest (>=4.3.0)", "six"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "cachetools"
 version = "4.1.1"
@@ -90,11 +65,6 @@ description = "Extensible memoizing collections and decorators"
 category = "main"
 optional = false
 python-versions = "~=3.5"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "certifi"
@@ -104,11 +74,6 @@ category = "main"
 optional = false
 python-versions = "*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "chardet"
 version = "3.0.4"
@@ -116,11 +81,6 @@ description = "Universal encoding detector for Python 2 and 3"
 category = "main"
 optional = false
 python-versions = "*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "click"
@@ -130,11 +90,6 @@ category = "main"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "colorama"
 version = "0.4.4"
@@ -142,11 +97,6 @@ description = "Cross-platform colored terminal text."
 category = "dev"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "configparser"
@@ -160,11 +110,6 @@ python-versions = ">=3.6"
 docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["pytest (>=3.5,!=3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pytest-cov", "jaraco.test (>=3.2.0)", "pytest-black (>=0.3.7)", "pytest-mypy"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "coverage"
 version = "5.3"
@@ -175,11 +120,6 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, <4"
 
 [package.extras]
 toml = ["toml"]
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "cycler"
@@ -192,11 +132,6 @@ python-versions = "*"
 [package.dependencies]
 six = "*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "cython"
 version = "0.29.21"
@@ -204,11 +139,6 @@ description = "The Cython compiler for writing C extensions for the Python langu
 category = "main"
 optional = false
 python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "dataclasses"
@@ -218,11 +148,6 @@ category = "main"
 optional = false
 python-versions = "*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "decorator"
 version = "4.4.2"
@@ -230,11 +155,6 @@ description = "Decorators for Humans"
 category = "main"
 optional = false
 python-versions = ">=2.6, !=3.0.*, !=3.1.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "docker-pycreds"
@@ -246,11 +166,6 @@ python-versions = "*"
 
 [package.dependencies]
 six = ">=1.4.0"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "execnet"
@@ -265,11 +180,6 @@ apipkg = ">=1.4"
 
 [package.extras]
 testing = ["pre-commit"]
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "fsspec"
@@ -295,11 +205,6 @@ sftp = ["paramiko"]
 smb = ["smbprotocol"]
 ssh = ["paramiko"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "future"
 version = "0.18.2"
@@ -307,11 +212,6 @@ description = "Clean single-source support for Python 3 and 2"
 category = "main"
 optional = false
 python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "gitdb"
@@ -324,11 +224,6 @@ python-versions = ">=3.4"
 [package.dependencies]
 smmap = ">=3.0.1,<4"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "gitpython"
 version = "3.1.11"
@@ -339,11 +234,6 @@ python-versions = ">=3.4"
 
 [package.dependencies]
 gitdb = ">=4.0.1,<5"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "google-auth"
@@ -362,11 +252,6 @@ six = ">=1.9.0"
 [package.extras]
 aiohttp = ["aiohttp (>=3.6.2,<4.0.0dev)"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "google-auth-oauthlib"
 version = "0.4.2"
@@ -382,11 +267,6 @@ requests-oauthlib = ">=0.7.0"
 [package.extras]
 tool = ["click"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "grpcio"
 version = "1.33.2"
@@ -401,11 +281,6 @@ six = ">=1.5.2"
 [package.extras]
 protobuf = ["grpcio-tools (>=1.33.2)"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "h5py"
 version = "2.10.0"
@@ -418,11 +293,6 @@ python-versions = "*"
 numpy = ">=1.7"
 six = "*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "idna"
 version = "2.10"
@@ -430,11 +300,6 @@ description = "Internationalized Domain Names in Applications (IDNA)"
 category = "main"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "imageio"
@@ -455,11 +320,6 @@ full = ["astropy", "gdal", "imageio-ffmpeg", "itk"]
 gdal = ["gdal"]
 itk = ["itk"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "imgaug"
 version = "0.4.0"
@@ -479,11 +339,6 @@ scipy = "*"
 Shapely = "*"
 six = "*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "iniconfig"
 version = "1.1.1"
@@ -492,11 +347,6 @@ category = "dev"
 optional = false
 python-versions = "*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "kiwisolver"
 version = "1.3.1"
@@ -504,11 +354,6 @@ description = "A fast implementation of the Cassowary constraint solver"
 category = "main"
 optional = false
 python-versions = ">=3.6"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "markdown"
@@ -520,11 +365,6 @@ python-versions = ">=3.6"
 
 [package.extras]
 testing = ["coverage", "pyyaml"]
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "matplotlib"
@@ -541,11 +381,6 @@ numpy = ">=1.15"
 pillow = ">=6.2.0"
 pyparsing = ">=2.0.3,<2.0.4 || >2.0.4,<2.1.2 || >2.1.2,<2.1.6 || >2.1.6"
 python-dateutil = ">=2.1"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "networkx"
@@ -571,11 +406,6 @@ pytest = ["pytest"]
 pyyaml = ["pyyaml"]
 scipy = ["scipy"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "numpy"
 version = "1.19.4"
@@ -583,11 +413,6 @@ description = "NumPy is the fundamental package for array computing with Python.
 category = "main"
 optional = false
 python-versions = ">=3.6"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "oauthlib"
@@ -602,11 +427,6 @@ rsa = ["cryptography"]
 signals = ["blinker"]
 signedtoken = ["cryptography", "pyjwt (>=1.0.0)"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "opencv-python"
 version = "4.4.0.46"
@@ -618,11 +438,6 @@ python-versions = ">=3.6"
 [package.dependencies]
 numpy = ">=1.17.3"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "opencv-python-headless"
 version = "4.4.0.46"
@@ -633,11 +448,6 @@ python-versions = ">=3.6"
 
 [package.dependencies]
 numpy = ">=1.17.3"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "opt-einsum"
@@ -654,11 +464,6 @@ numpy = ">=1.7"
 docs = ["sphinx (==1.2.3)", "sphinxcontrib-napoleon", "sphinx-rtd-theme", "numpydoc"]
 tests = ["pytest", "pytest-cov", "pytest-pep8"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "packaging"
 version = "20.4"
@@ -671,11 +476,6 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 pyparsing = ">=2.0.2"
 six = "*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pathtools"
 version = "0.1.2"
@@ -684,11 +484,6 @@ category = "main"
 optional = false
 python-versions = "*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pillow"
 version = "8.0.1"
@@ -696,11 +491,6 @@ description = "Python Imaging Library (Fork)"
 category = "main"
 optional = false
 python-versions = ">=3.6"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "pluggy"
@@ -712,11 +502,6 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [package.extras]
 dev = ["pre-commit", "tox"]
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "promise"
@@ -732,11 +517,6 @@ six = "*"
 [package.extras]
 test = ["pytest (>=2.7.3)", "pytest-cov", "coveralls", "futures", "pytest-benchmark", "mock"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "protobuf"
 version = "3.14.0"
@@ -747,11 +527,6 @@ python-versions = "*"
 
 [package.dependencies]
 six = ">=1.9"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "psutil"
@@ -764,11 +539,6 @@ python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 [package.extras]
 test = ["ipaddress", "mock", "unittest2", "enum34", "pywin32", "wmi"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "py"
 version = "1.9.0"
@@ -777,11 +547,6 @@ category = "dev"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pyasn1"
 version = "0.4.8"
@@ -789,11 +554,6 @@ description = "ASN.1 types and codecs"
 category = "main"
 optional = false
 python-versions = "*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "pyasn1-modules"
@@ -805,11 +565,6 @@ python-versions = "*"
 
 [package.dependencies]
 pyasn1 = ">=0.4.6,<0.5.0"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "pycocotools"
@@ -823,11 +578,6 @@ python-versions = "*"
 cython = ">=0.27.3"
 matplotlib = ">=2.1.0"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pyparsing"
 version = "2.4.7"
@@ -835,11 +585,6 @@ description = "Python parsing module"
 category = "main"
 optional = false
 python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "pyro-api"
@@ -852,11 +597,6 @@ python-versions = "*"
 [package.extras]
 dev = ["sphinx (>=2.0)", "sphinx-rtd-theme", "ipython"]
 test = ["flake8", "pytest (>=5.0)"]
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "pyro-ppl"
@@ -881,11 +621,6 @@ horovod = ["horovod[pytorch] (>=0.19)"]
 profile = ["prettytable", "pytest-benchmark", "snakeviz"]
 test = ["jupyter (>=1.0.0)", "graphviz (>=0.8)", "matplotlib (>=1.3)", "torchvision (>=0.7.0)", "visdom (>=0.1.4)", "pandas", "scikit-learn", "seaborn", "wget", "nbval", "pytest (>=5.0)", "pytest-cov", "scipy (>=1.1)"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pytest"
 version = "6.1.2"
@@ -908,11 +643,6 @@ toml = "*"
 checkqa_mypy = ["mypy (==0.780)"]
 testing = ["argcomplete", "hypothesis (>=3.56)", "mock", "nose", "requests", "xmlschema"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pytest-cov"
 version = "2.10.1"
@@ -928,11 +658,6 @@ pytest = ">=4.6"
 [package.extras]
 testing = ["fields", "hunter", "process-tests (==2.0.2)", "six", "pytest-xdist", "virtualenv"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pytest-forked"
 version = "1.3.0"
@@ -944,11 +669,6 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 [package.dependencies]
 py = "*"
 pytest = ">=3.10"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "pytest-xdist"
@@ -967,11 +687,6 @@ pytest-forked = "*"
 psutil = ["psutil (>=3.0)"]
 testing = ["filelock"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "python-dateutil"
 version = "2.8.1"
@@ -982,11 +697,6 @@ python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
 
 [package.dependencies]
 six = ">=1.5"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "pytorch-lightning"
@@ -1013,14 +723,9 @@ extra = ["matplotlib (>=3.1.1)", "horovod (>=0.20.2)", "omegaconf (>=2.0.0)", "s
 loggers = ["neptune-client (>=0.4.109)", "comet-ml (>=3.1.12)", "mlflow (>=1.0.0)", "test-tube (>=0.7.5)", "wandb (>=0.8.21)"]
 test = ["coverage (>=5.0)", "codecov (>=2.1)", "pytest (>=5.0)", "pytest-cov", "pytest-flake8", "flake8 (>=3.6)", "flake8-black", "check-manifest", "twine (==1.13.0)", "scikit-image (>=0.17.2)", "black (>=20.8b1)", "pre-commit (>=1.0)", "cloudpickle (>=1.2)", "nltk (>=3.3)"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pytorch-ssd"
-version = "1.0.0"
+version = "1.0.1"
 description = "Single Shot Multi-Box Detector implementation in PyTorch"
 category = "main"
 optional = false
@@ -1037,11 +742,6 @@ torch = ">=1.7.0,<2.0.0"
 torchvision = ">=0.8.0,<0.9.0"
 wandb = ">=0.10.9,<0.11.0"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pywavelets"
 version = "1.1.1"
@@ -1053,11 +753,6 @@ python-versions = ">=3.5"
 [package.dependencies]
 numpy = ">=1.13.3"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "pyyaml"
 version = "5.3.1"
@@ -1065,11 +760,6 @@ description = "YAML parser and emitter for Python"
 category = "main"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "requests"
@@ -1089,11 +779,6 @@ urllib3 = ">=1.21.1,<1.27"
 security = ["pyOpenSSL (>=0.14)", "cryptography (>=1.3.4)"]
 socks = ["PySocks (>=1.5.6,!=1.5.7)", "win-inet-pton"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "requests-oauthlib"
 version = "1.3.0"
@@ -1109,11 +794,6 @@ requests = ">=2.0.0"
 [package.extras]
 rsa = ["oauthlib[signedtoken] (>=3.0.0)"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "rsa"
 version = "4.6"
@@ -1125,11 +805,6 @@ python-versions = ">=3.5, <4"
 [package.dependencies]
 pyasn1 = ">=0.1.3"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "scikit-image"
 version = "0.17.2"
@@ -1138,10 +813,20 @@ category = "main"
 optional = false
 python-versions = ">=3.6"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
+[package.dependencies]
+imageio = ">=2.3.0"
+matplotlib = ">=2.0.0,<3.0.0 || >3.0.0"
+networkx = ">=2.0"
+numpy = ">=1.15.1"
+pillow = ">=4.3.0,<7.1.0 || >7.1.0,<7.1.1 || >7.1.1"
+PyWavelets = ">=1.1.1"
+scipy = ">=1.0.1"
+tifffile = ">=2019.7.26"
+
+[package.extras]
+docs = ["sphinx (>=1.8,<=2.4.4)", "numpydoc (>=0.9)", "sphinx-gallery (>=0.3.1)", "sphinx-copybutton", "pytest-runner", "scikit-learn", "matplotlib (>=3.0.1)", "dask[array] (>=0.15.0)", "cloudpickle (>=0.2.1)", "pandas (>=0.23.0)", "seaborn (>=0.7.1)", "pooch (>=0.5.2)"]
+optional = ["simpleitk", "astropy (>=1.2.0)", "qtpy", "pyamg", "dask[array] (>=0.15.0)", "cloudpickle (>=0.2.1)", "pooch (>=0.5.2)"]
+test = ["pytest (!=3.7.3)", "pytest-cov", "pytest-localserver", "flake8", "codecov"]
 
 [[package]]
 name = "scipy"
@@ -1153,11 +838,6 @@ python-versions = ">=3.6"
 
 [package.dependencies]
 numpy = ">=1.14.5"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "sentry-sdk"
@@ -1187,11 +867,6 @@ sanic = ["sanic (>=0.8)"]
 sqlalchemy = ["sqlalchemy (>=1.2)"]
 tornado = ["tornado (>=5)"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "shapely"
 version = "1.7.1"
@@ -1201,14 +876,9 @@ optional = false
 python-versions = "*"
 
 [package.extras]
-all = ["pytest", "pytest-cov", "numpy"]
+all = ["numpy", "pytest", "pytest-cov"]
 test = ["pytest", "pytest-cov"]
 vectorized = ["numpy"]
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "shortuuid"
@@ -1218,11 +888,6 @@ category = "main"
 optional = false
 python-versions = ">=3.5"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "six"
 version = "1.15.0"
@@ -1230,11 +895,6 @@ description = "Python 2 and 3 compatibility utilities"
 category = "main"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "smmap"
@@ -1244,11 +904,6 @@ category = "main"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "subprocess32"
 version = "3.5.4"
@@ -1256,11 +911,6 @@ description = "A backport of the subprocess module from Python 3 for use on 2.x.
 category = "main"
 optional = false
 python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*, <4"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "tensorboard"
@@ -1283,11 +933,6 @@ six = ">=1.10.0"
 tensorboard-plugin-wit = ">=1.6.0"
 werkzeug = ">=0.11.15"
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "tensorboard-plugin-wit"
 version = "1.7.0"
@@ -1295,11 +940,6 @@ description = "What-If Tool TensorBoard plugin."
 category = "main"
 optional = false
 python-versions = "*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "tifffile"
@@ -1315,11 +955,6 @@ numpy = ">=1.15.1"
 [package.extras]
 all = ["imagecodecs (>=2020.5.30)", "matplotlib (>=3.2)", "lxml"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "toml"
 version = "0.10.2"
@@ -1327,11 +962,6 @@ description = "Python Library for Tom's Obvious, Minimal Language"
 category = "dev"
 optional = false
 python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "torch"
@@ -1346,11 +976,6 @@ dataclasses = "*"
 future = "*"
 numpy = "*"
 typing-extensions = "*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "torchvision"
@@ -1368,26 +993,16 @@ torch = "1.7.0"
 [package.extras]
 scipy = ["scipy"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "tqdm"
-version = "4.51.0"
+version = "4.52.0"
 description = "Fast, Extensible Progress Meter"
 category = "main"
 optional = false
 python-versions = ">=2.6, !=3.0.*, !=3.1.*"
 
 [package.extras]
-dev = ["py-make (>=0.1.0)", "twine", "argopt", "pydoc-markdown"]
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
+dev = ["py-make (>=0.1.0)", "twine", "argopt", "pydoc-markdown", "wheel"]
 
 [[package]]
 name = "typing-extensions"
@@ -1396,11 +1011,6 @@ description = "Backported and Experimental Type Hints for Python 3.5+"
 category = "main"
 optional = false
 python-versions = "*"
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "urllib3"
@@ -1414,11 +1024,6 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, <4"
 brotli = ["brotlipy (>=0.6.0)"]
 secure = ["pyOpenSSL (>=0.14)", "cryptography (>=1.3.4)", "idna (>=2.0.0)", "certifi", "ipaddress"]
 socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
-
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
 
 [[package]]
 name = "wandb"
@@ -1451,11 +1056,6 @@ gcp = ["google-cloud-storage"]
 grpc = ["grpcio (==1.27.2)"]
 kubeflow = ["kubernetes", "minio", "google-cloud-storage", "sh"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "watchdog"
 version = "0.10.3"
@@ -1470,11 +1070,6 @@ pathtools = ">=0.1.1"
 [package.extras]
 watchmedo = ["PyYAML (>=3.10)", "argh (>=0.24.1)"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [[package]]
 name = "werkzeug"
 version = "1.0.1"
@@ -1487,15 +1082,10 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 dev = ["pytest", "pytest-timeout", "coverage", "tox", "sphinx", "pallets-sphinx-themes", "sphinx-issues"]
 watchdog = ["watchdog"]
 
-[package.source]
-type = "legacy"
-url = "https://pypi.trasee.io/simple"
-reference = "trasee"
-
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "9305a24639bc4f5a68d0cf4310b029357603adf47aba81d24f45daf1aa082c70"
+content-hash = "4ad47c9f9828b00feacd9709a2aea3351c119771bc762b95a4b73190d3d31b9f"
 
 [metadata.files]
 absl-py = [
@@ -1614,8 +1204,6 @@ cython = [
     {file = "Cython-0.29.21-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:603b9f1b8e93e8b494d3e89320c410679e21018e48b6cbc77280f5db71f17dc0"},
     {file = "Cython-0.29.21-cp38-cp38-win32.whl", hash = "sha256:473df5d5e400444a36ed81c6596f56a5b52a3481312d0a48d68b777790f730ae"},
     {file = "Cython-0.29.21-cp38-cp38-win_amd64.whl", hash = "sha256:b8a8a31b9e8860634adbca30fea1d0c7f08e208b3d7611f3e580e5f20992e5d7"},
-    {file = "Cython-0.29.21-cp39-cp39-manylinux1_i686.whl", hash = "sha256:7ebaa8800c376bcdae596fb1372cb4232a5ef957619d35839520d2786f2debb9"},
-    {file = "Cython-0.29.21-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:c111ac9abdf715762e4fb87395e59d61c0fbb6ce79eb2e24167700b6cfa8ba79"},
     {file = "Cython-0.29.21-py2.py3-none-any.whl", hash = "sha256:5c4276fdcbccdf1e3c1756c7aeb8395e9a36874fa4d30860e7694f43d325ae13"},
     {file = "Cython-0.29.21.tar.gz", hash = "sha256:e57acb89bd55943c8d8bf813763d20b9099cc7165c0f16b707631a7654be9cad"},
 ]
@@ -1702,8 +1290,6 @@ grpcio = [
     {file = "grpcio-1.33.2-cp39-cp39-manylinux2010_x86_64.whl", hash = "sha256:7f727b8b6d9f92fcab19dbc62ec956d8352c6767b97b8ab18754b2dfa84d784f"},
     {file = "grpcio-1.33.2-cp39-cp39-manylinux2014_i686.whl", hash = "sha256:2d5124284f9d29e4f06f674a12ebeb23fc16ce0f96f78a80a6036930642ae5ab"},
     {file = "grpcio-1.33.2-cp39-cp39-manylinux2014_x86_64.whl", hash = "sha256:eff55d318a114742ed2a06972f5daacfe3d5ad0c0c0d9146bcaf10acb427e6be"},
-    {file = "grpcio-1.33.2-cp39-cp39-win32.whl", hash = "sha256:dd47fac2878f6102efa211461eb6fa0a6dd7b4899cd1ade6cdcb9fa9748363eb"},
-    {file = "grpcio-1.33.2-cp39-cp39-win_amd64.whl", hash = "sha256:89add4f4cda9546f61cb8a6988bc5b22101dd8ca4af610dff6f28105d1f78695"},
     {file = "grpcio-1.33.2.tar.gz", hash = "sha256:21265511880056d19ce4f809ce3fbe2a3fa98ec1fc7167dbdf30a80d3276202e"},
 ]
 h5py = [
@@ -1994,12 +1580,34 @@ py = [
     {file = "py-1.9.0.tar.gz", hash = "sha256:9ca6883ce56b4e8da7e79ac18787889fa5206c79dcc67fb065376cd2fe03f342"},
 ]
 pyasn1 = [
+    {file = "pyasn1-0.4.8-py2.4.egg", hash = "sha256:fec3e9d8e36808a28efb59b489e4528c10ad0f480e57dcc32b4de5c9d8c9fdf3"},
+    {file = "pyasn1-0.4.8-py2.5.egg", hash = "sha256:0458773cfe65b153891ac249bcf1b5f8f320b7c2ce462151f8fa74de8934becf"},
+    {file = "pyasn1-0.4.8-py2.6.egg", hash = "sha256:5c9414dcfede6e441f7e8f81b43b34e834731003427e5b09e4e00e3172a10f00"},
+    {file = "pyasn1-0.4.8-py2.7.egg", hash = "sha256:6e7545f1a61025a4e58bb336952c5061697da694db1cae97b116e9c46abcf7c8"},
     {file = "pyasn1-0.4.8-py2.py3-none-any.whl", hash = "sha256:39c7e2ec30515947ff4e87fb6f456dfc6e84857d34be479c9d4a4ba4bf46aa5d"},
+    {file = "pyasn1-0.4.8-py3.1.egg", hash = "sha256:78fa6da68ed2727915c4767bb386ab32cdba863caa7dbe473eaae45f9959da86"},
+    {file = "pyasn1-0.4.8-py3.2.egg", hash = "sha256:08c3c53b75eaa48d71cf8c710312316392ed40899cb34710d092e96745a358b7"},
+    {file = "pyasn1-0.4.8-py3.3.egg", hash = "sha256:03840c999ba71680a131cfaee6fab142e1ed9bbd9c693e285cc6aca0d555e576"},
+    {file = "pyasn1-0.4.8-py3.4.egg", hash = "sha256:7ab8a544af125fb704feadb008c99a88805126fb525280b2270bb25cc1d78a12"},
+    {file = "pyasn1-0.4.8-py3.5.egg", hash = "sha256:e89bf84b5437b532b0803ba5c9a5e054d21fec423a89952a74f87fa2c9b7bce2"},
+    {file = "pyasn1-0.4.8-py3.6.egg", hash = "sha256:014c0e9976956a08139dc0712ae195324a75e142284d5f87f1a87ee1b068a359"},
+    {file = "pyasn1-0.4.8-py3.7.egg", hash = "sha256:99fcc3c8d804d1bc6d9a099921e39d827026409a58f2a720dcdb89374ea0c776"},
     {file = "pyasn1-0.4.8.tar.gz", hash = "sha256:aef77c9fb94a3ac588e87841208bdec464471d9871bd5050a287cc9a475cd0ba"},
 ]
 pyasn1-modules = [
     {file = "pyasn1-modules-0.2.8.tar.gz", hash = "sha256:905f84c712230b2c592c19470d3ca8d552de726050d1d1716282a1f6146be65e"},
+    {file = "pyasn1_modules-0.2.8-py2.4.egg", hash = "sha256:0fe1b68d1e486a1ed5473f1302bd991c1611d319bba158e98b106ff86e1d7199"},
+    {file = "pyasn1_modules-0.2.8-py2.5.egg", hash = "sha256:fe0644d9ab041506b62782e92b06b8c68cca799e1a9636ec398675459e031405"},
+    {file = "pyasn1_modules-0.2.8-py2.6.egg", hash = "sha256:a99324196732f53093a84c4369c996713eb8c89d360a496b599fb1a9c47fc3eb"},
+    {file = "pyasn1_modules-0.2.8-py2.7.egg", hash = "sha256:0845a5582f6a02bb3e1bde9ecfc4bfcae6ec3210dd270522fee602365430c3f8"},
     {file = "pyasn1_modules-0.2.8-py2.py3-none-any.whl", hash = "sha256:a50b808ffeb97cb3601dd25981f6b016cbb3d31fbf57a8b8a87428e6158d0c74"},
+    {file = "pyasn1_modules-0.2.8-py3.1.egg", hash = "sha256:f39edd8c4ecaa4556e989147ebf219227e2cd2e8a43c7e7fcb1f1c18c5fd6a3d"},
+    {file = "pyasn1_modules-0.2.8-py3.2.egg", hash = "sha256:b80486a6c77252ea3a3e9b1e360bc9cf28eaac41263d173c032581ad2f20fe45"},
+    {file = "pyasn1_modules-0.2.8-py3.3.egg", hash = "sha256:65cebbaffc913f4fe9e4808735c95ea22d7a7775646ab690518c056784bc21b4"},
+    {file = "pyasn1_modules-0.2.8-py3.4.egg", hash = "sha256:15b7c67fabc7fc240d87fb9aabf999cf82311a6d6fb2c70d00d3d0604878c811"},
+    {file = "pyasn1_modules-0.2.8-py3.5.egg", hash = "sha256:426edb7a5e8879f1ec54a1864f16b882c2837bfd06eee62f2c982315ee2473ed"},
+    {file = "pyasn1_modules-0.2.8-py3.6.egg", hash = "sha256:cbac4bc38d117f2a49aeedec4407d23e8866ea4ac27ff2cf7fb3e5b570df19e0"},
+    {file = "pyasn1_modules-0.2.8-py3.7.egg", hash = "sha256:c29a5e5cc7a3f05926aff34e097e84f8589cd790ce0ed41b67aed6857b26aafd"},
 ]
 pycocotools = [
     {file = "pycocotools-2.0.2.tar.gz", hash = "sha256:24717a12799b4471c2e54aa210d642e6cd4028826a1d49fcc2b0e3497e041f1a"},
@@ -2039,7 +1647,9 @@ pytorch-lightning = [
     {file = "pytorch-lightning-1.0.6.tar.gz", hash = "sha256:04f194e99a678a6676b5da4114cc2bec0bdd3c26ef27b500718c5d0164463228"},
     {file = "pytorch_lightning-1.0.6-py3-none-any.whl", hash = "sha256:728a3ad1199da1c52f8ed518f078b81604b318c3097f0af15d02e6e796d59e8d"},
 ]
-pytorch-ssd = []
+pytorch-ssd = [
+    {file = "pytorch_ssd-1.0.1-py3.8-none-any.whl", hash = "sha256:cc3981947b3bba605b3ca586d7b1b0c7468ee73c539dbb4ab9b657b6c3ef9d61"},
+]
 pywavelets = [
     {file = "PyWavelets-1.1.1-cp35-cp35m-macosx_10_6_intel.whl", hash = "sha256:35959c041ec014648575085a97b498eafbbaa824f86f6e4a59bfdef8a3fe6308"},
     {file = "PyWavelets-1.1.1-cp35-cp35m-manylinux1_i686.whl", hash = "sha256:55e39ec848ceec13c9fa1598253ae9dd5c31d09dfd48059462860d2b908fb224"},
@@ -2049,27 +1659,18 @@ pywavelets = [
     {file = "PyWavelets-1.1.1-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:7947e51ca05489b85928af52a34fe67022ab5b81d4ae32a4109a99e883a0635e"},
     {file = "PyWavelets-1.1.1-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:9e2528823ccf5a0a1d23262dfefe5034dce89cd84e4e124dc553dfcdf63ebb92"},
     {file = "PyWavelets-1.1.1-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:80b924edbc012ded8aa8b91cb2fd6207fb1a9a3a377beb4049b8a07445cec6f0"},
-    {file = "PyWavelets-1.1.1-cp36-cp36m-manylinux2014_aarch64.whl", hash = "sha256:c2a799e79cee81a862216c47e5623c97b95f1abee8dd1f9eed736df23fb653fb"},
     {file = "PyWavelets-1.1.1-cp36-cp36m-win32.whl", hash = "sha256:d510aef84d9852653d079c84f2f81a82d5d09815e625f35c95714e7364570ad4"},
     {file = "PyWavelets-1.1.1-cp36-cp36m-win_amd64.whl", hash = "sha256:889d4c5c5205a9c90118c1980df526857929841df33e4cd1ff1eff77c6817a65"},
     {file = "PyWavelets-1.1.1-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:68b5c33741d26c827074b3d8f0251de1c3019bb9567b8d303eb093c822ce28f1"},
     {file = "PyWavelets-1.1.1-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:18a51b3f9416a2ae6e9a35c4af32cf520dd7895f2b69714f4aa2f4342fca47f9"},
     {file = "PyWavelets-1.1.1-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:cfe79844526dd92e3ecc9490b5031fca5f8ab607e1e858feba232b1b788ff0ea"},
-    {file = "PyWavelets-1.1.1-cp37-cp37m-manylinux2014_aarch64.whl", hash = "sha256:2f7429eeb5bf9c7068002d0d7f094ed654c77a70ce5e6198737fd68ab85f8311"},
     {file = "PyWavelets-1.1.1-cp37-cp37m-win32.whl", hash = "sha256:720dbcdd3d91c6dfead79c80bf8b00a1d8aa4e5d551dc528c6d5151e4efc3403"},
     {file = "PyWavelets-1.1.1-cp37-cp37m-win_amd64.whl", hash = "sha256:bc5e87b72371da87c9bebc68e54882aada9c3114e640de180f62d5da95749cd3"},
     {file = "PyWavelets-1.1.1-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:98b2669c5af842a70cfab33a7043fcb5e7535a690a00cd251b44c9be0be418e5"},
     {file = "PyWavelets-1.1.1-cp38-cp38-manylinux1_i686.whl", hash = "sha256:e02a0558e0c2ac8b8bbe6a6ac18c136767ec56b96a321e0dfde2173adfa5a504"},
     {file = "PyWavelets-1.1.1-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:6162dc0ae04669ea04b4b51420777b9ea2d30b0a9d02901b2a3b4d61d159c2e9"},
-    {file = "PyWavelets-1.1.1-cp38-cp38-manylinux2014_aarch64.whl", hash = "sha256:39c74740718e420d38c78ca4498568fa57976d78d5096277358e0fa9629a7aea"},
     {file = "PyWavelets-1.1.1-cp38-cp38-win32.whl", hash = "sha256:79f5b54f9dc353e5ee47f0c3f02bebd2c899d49780633aa771fed43fa20b3149"},
     {file = "PyWavelets-1.1.1-cp38-cp38-win_amd64.whl", hash = "sha256:935ff247b8b78bdf77647fee962b1cc208c51a7b229db30b9ba5f6da3e675178"},
-    {file = "PyWavelets-1.1.1-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:6ebfefebb5c6494a3af41ad8c60248a95da267a24b79ed143723d4502b1fe4d7"},
-    {file = "PyWavelets-1.1.1-cp39-cp39-manylinux1_i686.whl", hash = "sha256:6bc78fb9c42a716309b4ace56f51965d8b5662c3ba19d4591749f31773db1125"},
-    {file = "PyWavelets-1.1.1-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:411e17ca6ed8cf5e18a7ca5ee06a91c25800cc6c58c77986202abf98d749273a"},
-    {file = "PyWavelets-1.1.1-cp39-cp39-manylinux2014_aarch64.whl", hash = "sha256:83c5e3eb78ce111c2f0b45f46106cc697c3cb6c4e5f51308e1f81b512c70c8fb"},
-    {file = "PyWavelets-1.1.1-cp39-cp39-win32.whl", hash = "sha256:2b634a54241c190ee989a4af87669d377b37c91bcc9cf0efe33c10ff847f7841"},
-    {file = "PyWavelets-1.1.1-cp39-cp39-win_amd64.whl", hash = "sha256:732bab78435c48be5d6bc75486ef629d7c8f112e07b313bf1f1a2220ab437277"},
     {file = "PyWavelets-1.1.1.tar.gz", hash = "sha256:1a64b40f6acb4ffbaccce0545d7fc641744f95351f62e4c6aaa40549326008c9"},
 ]
 pyyaml = [
@@ -2092,6 +1693,7 @@ requests = [
 requests-oauthlib = [
     {file = "requests-oauthlib-1.3.0.tar.gz", hash = "sha256:b4261601a71fd721a8bd6d7aa1cc1d6a8a93b4a9f5e96626f8e4d91e8beeaa6a"},
     {file = "requests_oauthlib-1.3.0-py2.py3-none-any.whl", hash = "sha256:7f71572defaecd16372f9006f33c2ec8c077c3cfa6f5911a9a90202beb513f3d"},
+    {file = "requests_oauthlib-1.3.0-py3.7.egg", hash = "sha256:fa6c47b933f01060936d87ae9327fead68768b69c6c9ea2109c48be30f2d4dbc"},
 ]
 rsa = [
     {file = "rsa-4.6-py3-none-any.whl", hash = "sha256:6166864e23d6b5195a5cfed6cd9fed0fe774e226d8f854fcb23b7bbef0350233"},
@@ -2161,8 +1763,6 @@ shapely = [
     {file = "Shapely-1.7.1-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:90a3e2ae0d6d7d50ff2370ba168fbd416a53e7d8448410758c5d6a5920646c1d"},
     {file = "Shapely-1.7.1-cp38-cp38-win32.whl", hash = "sha256:a3774516c8a83abfd1ddffb8b6ec1b0935d7fe6ea0ff5c31a18bfdae567b4eba"},
     {file = "Shapely-1.7.1-cp38-cp38-win_amd64.whl", hash = "sha256:6593026cd3f5daaea12bcc51ae5c979318070fefee210e7990cb8ac2364e79a1"},
-    {file = "Shapely-1.7.1-cp39-cp39-win32.whl", hash = "sha256:2df5260d0f2983309776cb41bfa85c464ec07018d88c0ecfca23d40bfadae2f1"},
-    {file = "Shapely-1.7.1-cp39-cp39-win_amd64.whl", hash = "sha256:a5c3a50d823c192f32615a2a6920e8c046b09e07a58eba220407335a9cd2e8ea"},
     {file = "Shapely-1.7.1.tar.gz", hash = "sha256:1641724c1055459a7e2b8bbe47ba25bdc89554582e62aec23cb3f3ca25f9b129"},
 ]
 shortuuid = [
@@ -2213,8 +1813,8 @@ torchvision = [
     {file = "torchvision-0.8.1-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:337820e680e5193872903369d8177d5ea681e7156d370d89d487b0e0f1e56238"},
 ]
 tqdm = [
-    {file = "tqdm-4.51.0-py2.py3-none-any.whl", hash = "sha256:9ad44aaf0fc3697c06f6e05c7cf025dd66bc7bcb7613c66d85f4464c47ac8fad"},
-    {file = "tqdm-4.51.0.tar.gz", hash = "sha256:ef54779f1c09f346b2b5a8e5c61f96fbcb639929e640e59f8cf810794f406432"},
+    {file = "tqdm-4.52.0-py2.py3-none-any.whl", hash = "sha256:80d9d5165d678dbd027dd102dfb99f71bf05f333b61fb761dbba13b4ab719ead"},
+    {file = "tqdm-4.52.0.tar.gz", hash = "sha256:18d6a615aedd09ec8456d9524489dab330af4bd5c2a14a76eb3f9a0e14471afe"},
 ]
 typing-extensions = [
     {file = "typing_extensions-3.7.4.3-py2-none-any.whl", hash = "sha256:dafc7639cde7f1b6e1acc0f457842a83e722ccca8eef5270af2d74792619a89f"},
