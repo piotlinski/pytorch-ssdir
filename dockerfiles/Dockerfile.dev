@@ -1,8 +1,5 @@
 FROM python:3.8-slim
 
-ARG PYPI_USERNAME
-ARG PYPI_PASSWORD
-
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=on \
@@ -26,8 +23,6 @@ RUN curl -sSL https://raw.githubusercontent.com/sdispater/poetry/master/get-poet
 WORKDIR $PYSETUP_PATH
 COPY poetry.lock pyproject.toml ./
 COPY pytorch_ssdir ./pytorch_ssdir
-RUN poetry config repositories.trasee https://pypi.trasee.io/simple/ \
-    && poetry config http-basic.trasee ${PYPI_USERNAME} ${PYPI_PASSWORD}
 
 RUN poetry install
 

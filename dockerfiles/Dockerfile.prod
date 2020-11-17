@@ -1,11 +1,5 @@
-ARG PYPI_USERNAME
-ARG PYPI_PASSWORD
-
 # --- BASE IMAGE ---
 FROM python:3.8-slim as builder
-
-ARG PYPI_USERNAME
-ARG PYPI_PASSWORD
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -30,15 +24,11 @@ RUN curl -sSL https://raw.githubusercontent.com/sdispater/poetry/master/get-poet
 WORKDIR $PYSETUP_PATH
 COPY poetry.lock pyproject.toml ./
 COPY pytorch_ssdir ./pytorch_ssdir
-RUN poetry config repositories.trasee https://pypi.trasee.io/simple/ \
-    && poetry config http-basic.trasee ${PYPI_USERNAME} ${PYPI_PASSWORD}
 RUN poetry build -f wheel
 
 # --- PROD IMAGE ---
 FROM piotrekzie100/pytorch:1.7.0-py38-cuda10.2
 
-ARG PYPI_USERNAME
-ARG PYPI_PASSWORD
 ARG WANDB_API_KEY
 
 ENV PYTHONUNBUFFERED=1 \
@@ -56,7 +46,7 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y gosu libgl1-mesa-glx ffmpeg libsm6 libxext6
 
 COPY --from=builder $PYSETUP_PATH/dist/*.whl /tmp/dist/
-RUN pip install /tmp/dist/*.whl --extra-index-url=https://${PYPI_USERNAME}:${PYPI_PASSWORD}@pypi.trasee.io/simple
+RUN pip install /tmp/dist/*.whl
 RUN rm -rf /tmp/dist
 
 COPY dockerfiles/entrypoint.sh /usr/local/bin/

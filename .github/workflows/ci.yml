@@ -1,5 +1,5 @@
 name: CI
-on: [push]
+on: push
 
 jobs:
   tests:
@@ -13,29 +13,21 @@ jobs:
         with:
           python-version: 3.8
 
-      - name: Install poetry
-        uses: dschep/install-poetry-action@v1.3
-      - name: Cache poetry virtualenv
-        uses: actions/cache@v1
+      - name: Install Poetry
+        uses: snok/install-poetry@v1.1.1
         with:
-          path: ~/.virtualenvs
-          key: poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            poetry-${{ hashFiles('**/poetry.lock') }}
-      - name: Set poetry config
-        run: |
-          poetry config repositories.trasee https://pypi.trasee.io/simple/
-          poetry config http-basic.trasee github ${{ secrets.pypi_github }}
-          poetry config virtualenvs.in-project true
-          poetry config virtualenvs.path ~/.virtualenvs
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v2
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install dependencies
         run: poetry install
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
 
-      - name: Set PY variable
-        run:
-          echo "::set-env name=PY::$(python -c 'import hashlib,
-          sys;print(hashlib.sha256(sys.version.encode()+sys.executable.encode()).hexdigest())')"
       - name: Cache pre-commit
         uses: actions/cache@v1
         with:
@@ -47,9 +39,7 @@ jobs:
           extra_args: --hook-stage manual --all-files
 
       - name: Build and push package to PyPI
+        if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
         run: |
-          poetry config repositories.trasee https://pypi.trasee.io/simple/
-          poetry config http-basic.trasee github ${{ secrets.pypi_github }}
-          poetry version $(poetry version | cut -f2 -d ' ')+$(git rev-parse --short HEAD)
           poetry build -f wheel
-          poetry publish -r trasee
+          poetry publish -u "${{ secrets.pypi_user }}" -p "${{ secrets.pypi_password }}" -n

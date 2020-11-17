@@ -9,14 +9,12 @@ help: ## Show this help
 format: ## Run pre-commit hooks to format code
 	 pre-commit run --all-files
 
-PYPI_USERNAME ?= trasee_rd
-PYPI_PASSWORD ?=
 WANDB_API_KEY ?=
 build.dev: ## Build docker development image
-	docker build --build-arg PYPI_USERNAME=${PYPI_USERNAME} --build-arg PYPI_PASSWORD=${PYPI_PASSWORD} -f dockerfiles/Dockerfile.dev -t $(tag)-dev .
+	docker build -f dockerfiles/Dockerfile.dev -t $(tag)-dev .
 
 build.prod: ## Build docker production image
-	docker build --build-arg PYPI_USERNAME=${PYPI_USERNAME} --build-arg PYPI_PASSWORD=${PYPI_PASSWORD} --build-arg WANDB_API_KEY=$(WANDB_API_KEY) -f dockerfiles/Dockerfile.prod -t $(tag) .
+	docker build --build-arg WANDB_API_KEY=$(WANDB_API_KEY) -f dockerfiles/Dockerfile.prod -t $(tag) .
 
 shell: ## Run docker dev shell
 	$(DOCKER_RUN) -it $(tag)-dev /bin/bash
