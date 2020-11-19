@@ -283,7 +283,7 @@ class SSDIR(pl.LightningModule):
         self,
         ssd_model: SSD,
         learning_rate: float = 1e-3,
-        ssd_lr_multiplier: float = 1e-3,
+        ssd_lr_multiplier: float = 1.0,
         warm_restart_epochs: float = 1 / 3,
         warm_restart_len_mult: int = 2,
         auto_lr_find: bool = False,
@@ -425,7 +425,7 @@ class SSDIR(pl.LightningModule):
         parser.add_argument(
             "--ssd-lr-multiplier",
             type=float,
-            default=1e-3,
+            default=1.0,
             help="Learning rate multiplier for training SSD backbone",
         )
         parser.add_argument(
@@ -931,16 +931,18 @@ class SSDIR(pl.LightningModule):
             len(self.train_dataloader()) * self.warm_restart_epochs
         )
 
-        optimizer = torch.optim.Adam(
-            [
+        if self.ssd_lr_multiplier != 1:
+            optimizer_params = [
                 {"params": self.filtered_parameters(exclude="ssd")},
                 {
                     "params": self.filtered_parameters(include="ssd"),
                     "lr": self.lr * self.ssd_lr_multiplier,
                 },
-            ],
-            lr=self.lr,
-        )
+            ]
+        else:
+            optimizer_params = self.parameters()
+
+        optimizer = torch.optim.Adam(optimizer_params, lr=self.lr)
         lr_scheduler = CosineAnnealingWarmRestarts(
             optimizer=optimizer,
             T_0=warm_restart_steps,
