@@ -202,9 +202,18 @@ class Decoder(nn.Module):
     def merge_reconstructions(
         reconstructions: torch.Tensor, weights: torch.Tensor
     ) -> torch.Tensor:
-        """Combine decoded images into one by weighted sum."""
-        weighted_images = reconstructions * weights.view(*weights.shape[:2], 1, 1, 1)
-        return torch.sum(weighted_images, dim=1)
+        """Combine decoded images into one by masked merging."""
+        sorted_weights, sort_index = torch.sort(weights, dim=1, descending=True)
+        sorted_reconstructions = reconstructions.gather(
+            dim=1,
+            index=sort_index.view(*sort_index.shape, 1, 1, 1).expand_as(
+                reconstructions
+            ),
+        ).permute(1, 0, 2, 3, 4)
+        outputs = sorted_reconstructions.new_zeros(sorted_reconstructions.shape[1:])
+        for instance_batch in sorted_reconstructions:
+            outputs += instance_batch * torch.where(outputs == 0, 1.0, 0.0)
+        return outputs
 
     def reconstruct_objects(
         self,
