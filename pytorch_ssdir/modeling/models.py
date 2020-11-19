@@ -822,9 +822,13 @@ class SSDIR(pl.LightningModule):
                 vis_objects.shape[-2],
             ),
         )
+        output = vis_objects.new_zeros(vis_objects.shape[1:])
         for idx, obj in enumerate(vis_objects):
+            filtered_obj = obj * torch.where(output == 0, 1.0, 0.5)
+            output += filtered_obj
+
             image = PILImage.fromarray(
-                (obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                (filtered_obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
             )
             object_image.paste(image, (idx * image.width, 0))
         return object_image
