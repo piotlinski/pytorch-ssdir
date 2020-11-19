@@ -29,16 +29,7 @@ from pytorch_ssdir.run.transforms import corner_to_center_target_transform
 
 warnings.filterwarnings(
     "ignore",
-    message=(
-        "indices was not registered in the param store because requires_grad=False"
-    ),
-)
-warnings.filterwarnings(
-    "ignore",
-    message=(
-        "empty_obj_const was not registered in the param store "
-        "because requires_grad=False"
-    ),
+    message=("^.* was not registered in the param store because requires_grad=False"),
 )
 
 
