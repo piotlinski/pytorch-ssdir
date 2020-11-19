@@ -113,9 +113,15 @@ class Decoder(nn.Module):
        - merge transformed images based on $$z_{depth}$$
     """
 
-    def __init__(self, ssd: SSD, z_what_size: int = 64, drop_empty: bool = True):
+    def __init__(
+        self,
+        ssd: SSD,
+        z_what_size: int = 64,
+        drop_empty: bool = True,
+        train_what: bool = True,
+    ):
         super().__init__()
-        self.what_dec = WhatDecoder(z_what_size=z_what_size)
+        self.what_dec = WhatDecoder(z_what_size=z_what_size).requires_grad_(train_what)
         self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
         self.indices = nn.Parameter(
             self.reconstruction_indices(
@@ -353,7 +359,12 @@ class SSDIR(pl.LightningModule):
             train_depth=train_depth,
             train_backbone=train_backbone,
         )
-        self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop)
+        self.decoder = Decoder(
+            ssd=ssd_model,
+            z_what_size=z_what_size,
+            drop_empty=drop,
+            train_what=train_what,
+        )
 
         self.lr = learning_rate
         self.ssd_lr_multiplier = ssd_lr_multiplier

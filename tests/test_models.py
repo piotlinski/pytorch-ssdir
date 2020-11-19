@@ -123,6 +123,15 @@ def test_decoder_dimensions(batch_size, ssd_model, n_ssd_features):
     assert outputs.shape == (batch_size, 3, *ssd_model.image_size)
 
 
+@pytest.mark.parametrize("train_what", [True, False])
+def test_disabling_decoder_modules(train_what, ssd_model):
+    """Verify if disabling encoder modules influences requires_grad attribute."""
+    decoder = Decoder(ssd=ssd_model, train_what=train_what)
+    assert all(
+        param.requires_grad == train_what for param in decoder.what_dec.parameters()
+    )
+
+
 @pytest.mark.parametrize("z_what_size", [2, 4])
 @pytest.mark.parametrize("batch_size", [2, 3])
 def test_ssdir_encoder_forward(z_what_size, batch_size, ssd_model, n_ssd_features):
