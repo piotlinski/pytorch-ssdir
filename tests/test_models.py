@@ -90,19 +90,24 @@ def test_pad_indices(n_present, expected):
     "inputs, weights, expected",
     [
         (
-            torch.ones(1, 2, 3, 5, 5),
+            torch.tensor([[[[[1.0, 0.0], [0.0, 0.0]]], [[[0.5, 0.5], [0.5, 0.5]]]]]),
             torch.tensor([[0.3, 0.2]]),
-            torch.full((1, 3, 5, 5), fill_value=0.5),
+            torch.tensor([[[[[1.0, 0.5], [0.5, 0.5]]]]]),
         ),
         (
-            torch.ones(2, 3, 3, 2, 2),
-            torch.tensor([[0.2, 0.5, 0.3], [0.1, 0.4, 0.5]]),
-            torch.ones((2, 3, 2, 2)),
+            torch.tensor(
+                [
+                    [[[[0.2, 0.0], [0.1, 0.0]]], [[[0.4, 0.3], [0.0, 0.1]]]],
+                    [[[[0.4, 0.3], [0.2, 0.1]]], [[[0.5, 0.5], [0.5, 0.5]]]],
+                ]
+            ),
+            torch.tensor([[0.2, 0.5], [0.4, 0.1]]),
+            torch.tensor([[[[0.4, 0.3], [0.1, 0.1]]], [[[0.4, 0.3], [0.2, 0.1]]]]),
         ),
     ],
 )
 def test_merge_reconstructions(inputs, weights, expected):
-    """Verify weighted sum-based reconstructions merging."""
+    """Verify mask-based reconstructions merging."""
     merged = Decoder.merge_reconstructions(inputs, weights=weights)
     assert merged.shape == (inputs.shape[0], *inputs.shape[2:])
     assert (merged == expected).all()
