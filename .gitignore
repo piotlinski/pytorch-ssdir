@@ -220,5 +220,8 @@ dmypy.json
 # data dir
 data/*
 
+# wandb runs directory
+runs/*
+
 # env file
 .env
