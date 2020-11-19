@@ -29,6 +29,33 @@ def test_encoder_dimensions(z_what_size, batch_size, ssd_model, n_ssd_features):
     assert z_depth_loc.shape == z_depth_scale.shape == (batch_size, n_objects + 1, 1)
 
 
+@pytest.mark.parametrize(
+    "modules_enabled",
+    [
+        [True, True, True, True, True],
+        [True, False, False, False, False],
+        [True, True, True, True, False],
+        [False, False, False, False, False],
+    ],
+)
+def test_disabling_encoder_modules(modules_enabled, ssd_model):
+    """Verify if disabling encoder modules influences requires_grad attribute."""
+    kwargs_keys = [
+        "train_what",
+        "train_where",
+        "train_present",
+        "train_depth",
+        "train_backbone",
+    ]
+    module_names = ["what_enc", "where_enc", "present_enc", "depth_enc", "ssd_backbone"]
+    encoder = Encoder(ssd=ssd_model, **dict(zip(kwargs_keys, modules_enabled)))
+    for name, requires_grad in zip(module_names, modules_enabled):
+        assert all(
+            param.requires_grad == requires_grad
+            for param in getattr(encoder, name).parameters()
+        )
+
+
 def test_reconstruction_indices(ssd_model, n_ssd_features):
     """Verify reconstruction indices calculation."""
     indices = Decoder.reconstruction_indices(

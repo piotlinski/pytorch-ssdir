@@ -52,22 +52,35 @@ class Encoder(nn.Module):
        - $$z_{depth} ~ N(\\mu_{depth}, \\sigma_{depth})$$
     """
 
-    def __init__(self, ssd: SSD, z_what_size: int = 64):
+    def __init__(
+        self,
+        ssd: SSD,
+        z_what_size: int = 64,
+        train_what: bool = True,
+        train_where: bool = True,
+        train_present: bool = True,
+        train_depth: bool = True,
+        train_backbone: bool = True,
+    ):
         super().__init__()
-        self.ssd_backbone = ssd.backbone
+        self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
         self.what_enc = WhatEncoder(
             z_what_size=z_what_size,
             feature_channels=ssd.backbone.out_channels,
             feature_maps=ssd.backbone.feature_maps,
-        )
+        ).requires_grad_(train_what)
         self.where_enc = WhereEncoder(
             ssd_box_predictor=ssd.predictor,
             ssd_anchors=ssd.anchors,
             ssd_center_variance=ssd.center_variance,
             ssd_size_variance=ssd.size_variance,
-        )
-        self.present_enc = PresentEncoder(ssd_box_predictor=ssd.predictor)
-        self.depth_enc = DepthEncoder(feature_channels=ssd.backbone.out_channels)
+        ).requires_grad_(train_where)
+        self.present_enc = PresentEncoder(
+            ssd_box_predictor=ssd.predictor
+        ).requires_grad_(train_present)
+        self.depth_enc = DepthEncoder(
+            feature_channels=ssd.backbone.out_channels
+        ).requires_grad_(train_depth)
 
     def forward(
         self, images: torch.Tensor
@@ -290,6 +303,11 @@ class SSDIR(pl.LightningModule):
         present_coef: float = 1.0,
         depth_coef: float = 1.0,
         rec_coef: float = 1.0,
+        train_what: bool = True,
+        train_where: bool = True,
+        train_present: bool = True,
+        train_depth: bool = True,
+        train_backbone: bool = True,
         visualize_inference: bool = True,
         n_visualize_objects: int = 5,
         visualize_latents: bool = True,
@@ -315,13 +333,26 @@ class SSDIR(pl.LightningModule):
         :param present_coef: z_present loss component coefficient
         :param depth_coef: z_depth loss component coefficient
         :param rec_coef: reconstruction error component coefficient
+        :param train_what: train what encoder and decoder
+        :param train_where: train where encoder
+        :param train_present: train present encoder
+        :param train_depth: train depth encoder
+        :param train_backbone: train ssd backbone
         :param visualize_inference: visualize inference
         :param n_visualize_objects: number of objects to visualize
         :param visualize_latents: visualize model latents
         """
         super().__init__()
 
-        self.encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
+        self.encoder = Encoder(
+            ssd=ssd_model,
+            z_what_size=z_what_size,
+            train_what=train_what,
+            train_where=train_where,
+            train_present=train_present,
+            train_depth=train_depth,
+            train_backbone=train_backbone,
+        )
         self.decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size, drop_empty=drop)
 
         self.lr = learning_rate
@@ -480,6 +511,49 @@ class SSDIR(pl.LightningModule):
             type=float,
             default=1.0,
             help="Reconstruction error component coefficient",
+        )
+        parser.add_argument(
+            "--train-what",
+            default=True,
+            action="store_true",
+            help="Train what encoder and decoder",
+        )
+        parser.add_argument("--no-train-what", dest="train_what", action="store_false")
+        parser.add_argument(
+            "--train-where",
+            default=True,
+            action="store_true",
+            help="Train where encoder",
+        )
+        parser.add_argument(
+            "--no-train-where", dest="train_where", action="store_false"
+        )
+        parser.add_argument(
+            "--train-present",
+            default=True,
+            action="store_true",
+            help="Train present encoder",
+        )
+        parser.add_argument(
+            "--no-train-present", dest="train_present", action="store_false"
+        )
+        parser.add_argument(
+            "--train-depth",
+            default=True,
+            action="store_true",
+            help="Train depth encoder",
+        )
+        parser.add_argument(
+            "--no-train-depth", dest="train_depth", action="store_false"
+        )
+        parser.add_argument(
+            "--train-backbone",
+            default=True,
+            action="store_true",
+            help="Train SSD backbone",
+        )
+        parser.add_argument(
+            "--no-train-backbone", dest="train_backbone", action="store_false"
         )
         parser.add_argument(
             "--flip-train",
