@@ -12,20 +12,6 @@ warnings.filterwarnings(
     "ignore",
     message="Default grid_sample and affine_grid behavior has changed",
 )
-warnings.filterwarnings(
-    "ignore",
-    message=(
-        "where_enc.anchors was not registered in the param store "
-        "because requires_grad=False"
-    ),
-)
-warnings.filterwarnings(
-    "ignore",
-    message=(
-        "where_enc.bg_where was not registered in the param store "
-        "because requires_grad=False"
-    ),
-)
 
 
 class WhereEncoder(nn.Module):

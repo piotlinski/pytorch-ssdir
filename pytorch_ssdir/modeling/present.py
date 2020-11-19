@@ -1,18 +1,9 @@
 """$$z_{present}$$ encoder."""
-import warnings
 from typing import Tuple
 
 import torch
 import torch.nn as nn
 from pytorch_ssd.modeling.box_predictors import SSDBoxPredictor
-
-warnings.filterwarnings(
-    "ignore",
-    message=(
-        "present_enc.bg_present was not registered in the param store "
-        "because requires_grad=False"
-    ),
-)
 
 
 class PresentEncoder(nn.Module):
