@@ -13,7 +13,6 @@ class PresentEncoder(nn.Module):
         super().__init__()
         self.ssd_cls_headers = ssd_box_predictor.cls_headers
         self.n_classes = ssd_box_predictor.n_classes
-        self.bg_present = nn.Parameter(torch.ones(1), requires_grad=False)
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         """Takes tuple of tensors (batch_size x grid x grid x features)
@@ -32,8 +31,6 @@ class PresentEncoder(nn.Module):
             max_values, max_indices = torch.max(logits, dim=-1, keepdim=True)
             present = torch.zeros_like(max_values)
             presents.append(present.where(max_indices == 0, max_values))
-
-        presents.append(self.bg_present.expand(batch_size, 1, 1))
 
         presents = torch.cat(presents, dim=1)
         return presents
