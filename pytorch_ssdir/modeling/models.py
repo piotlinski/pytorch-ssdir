@@ -123,6 +123,11 @@ class Decoder(nn.Module):
         )
         self.drop = drop_empty
         self.empty_obj_const = nn.Parameter(torch.tensor(-1000.0), requires_grad=False)
+        self.bg_where = nn.Parameter(
+            torch.tensor([0.5, 0.5, 1.0, 1.0]), requires_grad=False
+        )
+        self.bg_present = nn.Parameter(torch.ones(1), requires_grad=False)
+        self.bg_depth = nn.Parameter(torch.tensor([-1000.0]), requires_grad=False)
 
     @staticmethod
     def reconstruction_indices(
@@ -257,6 +262,22 @@ class Decoder(nn.Module):
             depths = z_depth.where(z_present == 1.0, self.empty_obj_const)
         return reconstructions, depths
 
+    def append_bg_latents(
+        self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Add background latents to z_where, z_present and z_depth."""
+        z_what, z_where, z_present, z_depth = latents
+        batch_size = z_what.shape[0]
+        where_bg = self.bg_where.expand(batch_size, 1, 4)
+        present_bg = self.bg_present.expand(batch_size, 1, 1)
+        depth_bg = self.bg_depth.expand(batch_size, 1, 1)
+        return (
+            z_what,
+            torch.cat((z_where, where_bg), dim=1),
+            torch.cat((z_present, present_bg), dim=1),
+            torch.cat((z_depth, depth_bg), dim=1),
+        )
+
     def pad_latents(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -274,14 +295,15 @@ class Decoder(nn.Module):
         .. and outputs reconstructed images batch
         .. (batch_size x channels x image_size x image_size)
         """
-        z_what, z_where, z_present, z_depth = self.pad_latents(latents)
+        latents_bg = self.append_bg_latents(latents)
+        z_what, z_where, z_present, z_depth = self.pad_latents(latents_bg)
         # render reconstructions
         reconstructions, depths = self.reconstruct_objects(
             z_what, z_where, z_present, z_depth
         )
         # merge reconstructions
         return self.merge_reconstructions(
-            reconstructions=reconstructions, weights=functional.softmax(depths, dim=1)
+            reconstructions=reconstructions, weights=depths
         )
 
 
@@ -405,17 +427,14 @@ class SSDIR(pl.LightningModule):
         self.visualize_latents = visualize_latents
         self.visualize_latents_freq = visualize_latents_freq
 
-        self.n_objects = (
-            sum(features ** 2 for features in ssd_model.backbone.feature_maps) + 1
+        self.n_objects = sum(
+            features ** 2 for features in ssd_model.backbone.feature_maps
         )
-        self.n_ssd_features = (
-            sum(
-                boxes * features ** 2
-                for features, boxes in zip(
-                    ssd_model.backbone.feature_maps, ssd_model.backbone.boxes_per_loc
-                )
+        self.n_ssd_features = sum(
+            boxes * features ** 2
+            for features, boxes in zip(
+                ssd_model.backbone.feature_maps, ssd_model.backbone.boxes_per_loc
             )
-            + 1
         )
 
     @staticmethod
@@ -661,7 +680,7 @@ class SSDIR(pl.LightningModule):
         batch_size = x.shape[0]
 
         with pyro.plate("data", batch_size):
-            z_what_loc = x.new_zeros(batch_size, self.n_objects, self.z_what_size)
+            z_what_loc = x.new_zeros(batch_size, self.n_objects + 1, self.z_what_size)
             z_what_scale = torch.ones_like(z_what_loc)
 
             z_where_loc = x.new_full(
@@ -894,7 +913,10 @@ class SSDIR(pl.LightningModule):
         ):
             with torch.no_grad():
                 latents = self.encoder_forward(vis_images)
-                z_what, z_where, z_present, z_depth = self.decoder.pad_latents(latents)
+                latents_bg = self.decoder.append_bg_latents(latents)
+                z_what, z_where, z_present, z_depth = self.decoder.pad_latents(
+                    latents_bg
+                )
                 reconstructions = self.decoder_forward(latents)
                 objects, depths = self.decoder.reconstruct_objects(
                     z_what[0].unsqueeze(0),

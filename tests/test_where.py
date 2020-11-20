@@ -14,20 +14,7 @@ def test_where_encoder_dimensions(ssd_model, ssd_features, n_ssd_features):
         ssd_size_variance=ssd_model.size_variance,
     )
     outputs = encoder(ssd_features)
-    assert outputs.shape == (ssd_features[0].shape[0], n_ssd_features + 1, 4)
-
-
-def test_where_encoder_background_latent(ssd_model, ssd_features, n_ssd_features):
-    """Verify WhereEncoder appending background latent."""
-    encoder = WhereEncoder(
-        ssd_box_predictor=ssd_model.predictor,
-        ssd_anchors=ssd_model.anchors,
-        ssd_center_variance=ssd_model.center_variance,
-        ssd_size_variance=ssd_model.size_variance,
-    )
-    outputs = encoder(ssd_features)
-    for output in outputs[:, -1]:
-        assert (output == torch.tensor([0.5, 0.5, 1.0, 1.0])).all()
+    assert outputs.shape == (ssd_features[0].shape[0], n_ssd_features, 4)
 
 
 def test_where_encoder_dtype(ssd_model, ssd_features):

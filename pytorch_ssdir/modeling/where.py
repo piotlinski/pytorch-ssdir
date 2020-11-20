@@ -34,9 +34,6 @@ class WhereEncoder(nn.Module):
         self.anchors = nn.Parameter(ssd_anchors, requires_grad=False)
         self.center_variance = ssd_center_variance
         self.size_variance = ssd_size_variance
-        self.bg_where = nn.Parameter(
-            torch.tensor([0.5, 0.5, 1.0, 1.0]), requires_grad=False
-        )
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         """Takes tuple of tensors (batch_size x grid x grid x features)
@@ -60,9 +57,8 @@ class WhereEncoder(nn.Module):
             center_variance=self.center_variance,
             size_variance=self.size_variance,
         )
-        bg_where = self.bg_where.expand(batch_size, 1, 4)
 
-        return torch.cat((where_boxes, bg_where), dim=1)
+        return where_boxes
 
 
 class WhereTransformer(nn.Module):
