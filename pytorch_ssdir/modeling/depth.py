@@ -59,7 +59,8 @@ class DepthEncoder(nn.Module):
         scales = torch.cat(scales, dim=1)
 
         bg_locs, _ = torch.min(locs, dim=1)
-        bg_locs = bg_locs.unsqueeze(1) - 1e-3
+        max_scale, _ = torch.max(scales, dim=1)
+        bg_locs = bg_locs.unsqueeze(1) - 5 * max_scale.unsqueeze(1)
         bg_scales = self.bg_scale.expand(batch_size, 1, 1)
 
         return torch.cat((locs, bg_locs), dim=1), torch.cat((scales, bg_scales), dim=1)
