@@ -786,10 +786,12 @@ class SSDIR(pl.LightningModule):
         for idx, obj in enumerate(vis_objects):
             filtered_obj = obj * torch.where(output == 0, 1.0, 0.8)
             output += filtered_obj
-            image = PILImage.fromarray(
+            obj_image = PILImage.fromarray(
                 (filtered_obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
             )
-            inference_image.paste(image, (vis_image.width + idx * image.width, 0))
+            inference_image.paste(
+                obj_image, (vis_image.width + idx * obj_image.width, 0)
+            )
 
         inference_image.paste(
             vis_reconstruction,
@@ -895,13 +897,15 @@ class SSDIR(pl.LightningModule):
                 z_what, z_where, z_present, z_depth = self.decoder.pad_latents(latents)
                 reconstructions = self.decoder_forward(latents)
                 objects, depths = self.decoder.reconstruct_objects(
-                    z_what[0], z_where[0], z_present[0], z_depth[0]
+                    z_what[0].unsqueeze(0),
+                    z_where[0].unsqueeze(0),
+                    z_present[0].unsqueeze(0),
+                    z_depth[0].unsqueeze(0),
                 )
-                _, sort_index = torch.sort(depths, dim=-1, descending=True)
-                reshaped_objects = objects.view(-1, 3, *self.image_size)
-                sorted_objects = reshaped_objects.gather(
-                    dim=0,
-                    index=sort_index.view(-1, 1, 1, 1).expand_as(reshaped_objects),
+                _, sort_index = torch.sort(depths, dim=1, descending=True)
+                sorted_objects = objects.gather(
+                    dim=1,
+                    index=sort_index.view(1, -1, 1, 1, 1).expand_as(objects),
                 )
                 filtered_z_where = z_where[0][
                     (z_present[0] == 1).expand_as(z_where[0])
@@ -915,7 +919,7 @@ class SSDIR(pl.LightningModule):
                 boxes=vis_boxes[0],
                 reconstruction=reconstructions[0],
                 z_where=filtered_z_where,
-                objects=sorted_objects,
+                objects=sorted_objects[0],
             )
             self.logger.experiment.log(
                 {
