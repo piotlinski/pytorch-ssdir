@@ -217,8 +217,8 @@ class Decoder(nn.Module):
         ).permute(1, 0, 2, 3, 4)
         outputs = sorted_reconstructions.new_zeros(sorted_reconstructions.shape[1:])
         for instance_batch in sorted_reconstructions:
-            outputs += instance_batch * torch.where(outputs == 0, 1.0, 0.0)
-        return outputs
+            outputs += instance_batch * torch.where(outputs < 1e-3, 1.0, 0.0)
+        return outputs.clamp_(0.0, 1.0)
 
     def reconstruct_objects(
         self,
@@ -340,7 +340,7 @@ class SSDIR(pl.LightningModule):
         visualize_inference_freq: int = 500,
         n_visualize_objects: int = 10,
         visualize_latents: bool = True,
-        visualize_latents_freq: int = 10,
+        visualize_latents_freq: int = 5,
         **_kwargs,
     ):
         """
@@ -627,7 +627,7 @@ class SSDIR(pl.LightningModule):
         parser.add_argument(
             "--n-visualize-objects",
             type=int,
-            default=10,
+            default=5,
             help="Number of objects to visualize",
         )
         parser.add_argument(
@@ -798,6 +798,7 @@ class SSDIR(pl.LightningModule):
                 + vis_reconstruction.width,
                 max(vis_image.height, vis_reconstruction.height, vis_objects.shape[-2]),
             ),
+            "white",
         )
         inference_image.paste(vis_image, (0, 0))
 
@@ -815,9 +816,7 @@ class SSDIR(pl.LightningModule):
         inference_image.paste(
             vis_reconstruction,
             (
-                vis_image.width
-                + vis_objects.shape[0] * vis_objects.shape[-1]
-                + vis_reconstruction.width,
+                vis_image.width + vis_objects.shape[0] * vis_objects.shape[-1],
                 0,
             ),
         )
