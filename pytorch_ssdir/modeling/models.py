@@ -315,8 +315,10 @@ class SSDIR(pl.LightningModule):
         train_depth: bool = True,
         train_backbone: bool = True,
         visualize_inference: bool = True,
-        n_visualize_objects: int = 5,
+        visualize_inference_freq: int = 500,
+        n_visualize_objects: int = 10,
         visualize_latents: bool = True,
+        visualize_latents_freq: int = 10,
         **_kwargs,
     ):
         """
@@ -345,8 +347,10 @@ class SSDIR(pl.LightningModule):
         :param train_depth: train depth encoder
         :param train_backbone: train ssd backbone
         :param visualize_inference: visualize inference
+        :param visualize_inference_freq: how often to visualize inference
         :param n_visualize_objects: number of objects to visualize
         :param visualize_latents: visualize model latents
+        :param visualize_latents_freq: how often to visualize latents
         """
         super().__init__()
 
@@ -396,8 +400,10 @@ class SSDIR(pl.LightningModule):
         self.rec_coef = rec_coef
 
         self.visualize_inference = visualize_inference
+        self.visualize_inference_freq = visualize_inference_freq
         self.n_visualize_objects = n_visualize_objects
         self.visualize_latents = visualize_latents
+        self.visualize_latents_freq = visualize_latents_freq
 
         self.n_objects = (
             sum(features ** 2 for features in ssd_model.backbone.feature_maps) + 1
@@ -594,9 +600,15 @@ class SSDIR(pl.LightningModule):
             "--no-visualize-inference", dest="visualize_inference", action="store_false"
         )
         parser.add_argument(
+            "--visualize-inference-freq",
+            type=int,
+            default=500,
+            help="How often to perform inference visualization.",
+        )
+        parser.add_argument(
             "--n-visualize-objects",
             type=int,
-            default=5,
+            default=10,
             help="Number of objects to visualize",
         )
         parser.add_argument(
@@ -607,6 +619,12 @@ class SSDIR(pl.LightningModule):
         )
         parser.add_argument(
             "--no-visualize-latents", dest="visualize_latents", action="store_false"
+        )
+        parser.add_argument(
+            "--visualize-latents-freq",
+            type=int,
+            default=10,
+            help="How often to perform latents visualization.",
         )
         return parser
 
@@ -737,17 +755,13 @@ class SSDIR(pl.LightningModule):
                 continue
             yield param
 
-    @property
-    def is_auto_lr_find(self) -> bool:
-        """Flag to show if the model is tuned for lr."""
-        return self.auto_lr_find and self.current_epoch == 0
-
     def get_inference_visualization(
         self,
         image: torch.Tensor,
         boxes: torch.Tensor,
         reconstruction: torch.Tensor,
         z_where: torch.Tensor,
+        objects: torch.Tensor,
     ) -> Tuple[PILImage.Image, Dict[str, Any]]:
         """Create model inference visualization."""
         vis_image = PILImage.fromarray(
@@ -756,17 +770,35 @@ class SSDIR(pl.LightningModule):
         vis_reconstruction = PILImage.fromarray(
             (reconstruction.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
         )
+        vis_objects = objects[: self.n_visualize_objects].squeeze(1)
         inference_image = PILImage.new(
             "RGB",
             (
-                vis_image.width * 2 + vis_reconstruction.width,
-                max(vis_image.height, vis_reconstruction.height),
+                vis_image.width
+                + vis_objects.shape[0] * vis_objects.shape[-1]
+                + vis_reconstruction.width,
+                max(vis_image.height, vis_reconstruction.height, vis_objects.shape[-2]),
             ),
         )
         inference_image.paste(vis_image, (0, 0))
-        inference_image.paste(vis_image, (vis_image.width, 0))
+
+        output = vis_objects.new_zeros(vis_objects.shape[1:])
+        for idx, obj in enumerate(vis_objects):
+            filtered_obj = obj * torch.where(output == 0, 1.0, 0.8)
+            output += filtered_obj
+            image = PILImage.fromarray(
+                (filtered_obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+            )
+            inference_image.paste(image, (vis_image.width + idx * image.width, 0))
+
         inference_image.paste(
-            vis_reconstruction, (vis_image.width + vis_reconstruction.width, 0)
+            vis_reconstruction,
+            (
+                vis_image.width
+                + vis_objects.shape[0] * vis_objects.shape[-1]
+                + vis_reconstruction.width,
+                0,
+            ),
         )
         wandb_inference_boxes = {
             "gt": {
@@ -774,7 +806,7 @@ class SSDIR(pl.LightningModule):
                     {
                         "position": {
                             "middle": (
-                                box[0].int().item() + vis_image.width,
+                                box[0].int().item(),
                                 box[1].int().item(),
                             ),
                             "width": box[2].int().item(),
@@ -795,7 +827,7 @@ class SSDIR(pl.LightningModule):
                             "middle": (
                                 box[0].int().item()
                                 + vis_image.width
-                                + vis_reconstruction.width,
+                                + vis_objects.shape[0] * vis_objects.shape[-1],
                                 box[1].int().item(),
                             ),
                             "width": box[2].int().item(),
@@ -812,31 +844,9 @@ class SSDIR(pl.LightningModule):
         }
         return inference_image, wandb_inference_boxes
 
-    def get_latents_visualization(self, sorted_objects: torch.Tensor) -> PILImage.Image:
-        """Get objects reconstructed from latents visualization."""
-        vis_objects = sorted_objects[: self.n_visualize_objects].squeeze(1)
-        object_image = PILImage.new(
-            "RGB",
-            (
-                vis_objects.shape[0] * vis_objects.shape[-1],
-                vis_objects.shape[-2],
-            ),
-        )
-        output = vis_objects.new_zeros(vis_objects.shape[1:])
-        for idx, obj in enumerate(vis_objects):
-            filtered_obj = obj * torch.where(output == 0, 1.0, 0.5)
-            output += filtered_obj
-
-            image = PILImage.fromarray(
-                (filtered_obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-            )
-            object_image.paste(image, (idx * image.width, 0))
-        return object_image
-
     def common_run_step(
         self,
         batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-        batch_nb: int,
         stage: str,
     ):
         """Common model running step for training and validation."""
@@ -850,79 +860,73 @@ class SSDIR(pl.LightningModule):
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
             self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
 
-        if batch_nb == 0:
-            vis_images = images.detach()
-            vis_boxes = boxes.detach()
-            if self.visualize_latents:
-                with torch.no_grad():
-                    (
-                        (z_what_loc, z_what_scale),
-                        z_where_loc,
-                        z_present_p,
-                        (z_depth_loc, z_depth_scale),
-                    ) = self.encoder(vis_images)
-                latents_dict = {
-                    "z_what_loc": z_what_loc,
-                    "z_what_scale": z_what_scale,
-                    "z_where_loc": z_where_loc,
-                    "z_present_p": z_present_p,
-                    "z_depth_loc": z_depth_loc,
-                    "z_depth_scale": z_depth_scale,
-                }
-                for latent_name, latent in latents_dict.items():
-                    self.logger.experiment.log(
-                        {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
-                        step=self.global_step,
-                    )
-            if self.visualize_inference:
-                with torch.no_grad():
-                    latents = self.encoder_forward(vis_images)
-                    z_what, z_where, z_present, z_depth = self.decoder.pad_latents(
-                        latents
-                    )
-                    reconstructions = self.decoder_forward(latents)
-                    objects, depths = self.decoder.reconstruct_objects(
-                        z_what[0], z_where[0], z_present[0], z_depth[0]
-                    )
-                    _, sort_index = torch.sort(depths, dim=0, descending=True)
-                    reshaped_objects = objects.view(-1, 3, *self.image_size)
-                    sorted_objects = reshaped_objects.gather(
-                        dim=0,
-                        index=sort_index.view(-1, 1, 1, 1).expand_as(reshaped_objects),
-                    )
-                    filtered_z_where = z_where[0][
-                        (z_present[0] == 1).expand_as(z_where[0])
-                    ].view(-1, z_where.shape[-1])
-
+        vis_images = images.detach()
+        vis_boxes = boxes.detach()
+        if (
+            self.visualize_latents
+            and self.global_step % self.visualize_latents_freq == 0
+        ):
+            with torch.no_grad():
                 (
-                    inference_image,
-                    wandb_inference_boxes,
-                ) = self.get_inference_visualization(
-                    image=vis_images[0],
-                    boxes=vis_boxes[0],
-                    reconstruction=reconstructions[0],
-                    z_where=filtered_z_where,
-                )
+                    (z_what_loc, z_what_scale),
+                    z_where_loc,
+                    z_present_p,
+                    (z_depth_loc, z_depth_scale),
+                ) = self.encoder(vis_images)
+            latents_dict = {
+                "z_what_loc": z_what_loc,
+                "z_what_scale": z_what_scale,
+                "z_where_loc": z_where_loc,
+                "z_present_p": z_present_p,
+                "z_depth_loc": z_depth_loc,
+                "z_depth_scale": z_depth_scale,
+            }
+            for latent_name, latent in latents_dict.items():
                 self.logger.experiment.log(
-                    {
-                        f"{stage}_inference_image": wandb.Image(
-                            inference_image,
-                            boxes=wandb_inference_boxes,
-                            caption="model inference",
-                        )
-                    },
+                    {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
+        if (
+            self.visualize_inference
+            and self.global_step % self.visualize_inference_freq == 0
+        ):
+            with torch.no_grad():
+                latents = self.encoder_forward(vis_images)
+                z_what, z_where, z_present, z_depth = self.decoder.pad_latents(latents)
+                reconstructions = self.decoder_forward(latents)
+                objects, depths = self.decoder.reconstruct_objects(
+                    z_what[0], z_where[0], z_present[0], z_depth[0]
+                )
+                _, sort_index = torch.sort(depths, dim=-1, descending=True)
+                reshaped_objects = objects.view(-1, 3, *self.image_size)
+                sorted_objects = reshaped_objects.gather(
+                    dim=0,
+                    index=sort_index.view(-1, 1, 1, 1).expand_as(reshaped_objects),
+                )
+                filtered_z_where = z_where[0][
+                    (z_present[0] == 1).expand_as(z_where[0])
+                ].view(-1, z_where.shape[-1])
 
-                object_image = self.get_latents_visualization(sorted_objects)
-                self.logger.experiment.log(
-                    {
-                        f"{stage}_objects_image": wandb.Image(
-                            object_image, caption="object reconstructions"
-                        )
-                    },
-                    step=self.global_step,
-                )
+            (
+                inference_image,
+                wandb_inference_boxes,
+            ) = self.get_inference_visualization(
+                image=vis_images[0],
+                boxes=vis_boxes[0],
+                reconstruction=reconstructions[0],
+                z_where=filtered_z_where,
+                objects=sorted_objects,
+            )
+            self.logger.experiment.log(
+                {
+                    f"{stage}_inference_image": wandb.Image(
+                        inference_image,
+                        boxes=wandb_inference_boxes,
+                        caption="model inference",
+                    )
+                },
+                step=self.global_step,
+            )
 
         return loss
 
@@ -930,13 +934,13 @@ class SSDIR(pl.LightningModule):
         self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
     ):
         """Step for training."""
-        return self.common_run_step(batch, batch_nb, stage="train")
+        return self.common_run_step(batch, stage="train")
 
     def validation_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
     ):
         """Step for validation."""
-        return self.common_run_step(batch, batch_nb, stage="val")
+        return self.common_run_step(batch, stage="val")
 
     def configure_optimizers(self):
         """Configure training optimizer."""
