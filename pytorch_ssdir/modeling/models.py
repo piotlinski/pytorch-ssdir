@@ -874,6 +874,7 @@ class SSDIR(pl.LightningModule):
     def common_run_step(
         self,
         batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        batch_nb: int,
         stage: str,
     ):
         """Common model running step for training and validation."""
@@ -889,9 +890,8 @@ class SSDIR(pl.LightningModule):
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
-        if (
-            self.visualize_latents
-            and self.global_step % self.visualize_latents_freq == 0
+        if self.visualize_latents and (
+            self.global_step % self.visualize_latents_freq == 0 or batch_nb == 0
         ):
             with torch.no_grad():
                 (
@@ -913,9 +913,8 @@ class SSDIR(pl.LightningModule):
                     {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
-        if (
-            self.visualize_inference
-            and self.global_step % self.visualize_inference_freq == 0
+        if self.visualize_inference and (
+            self.global_step % self.visualize_inference_freq == 0 or batch_nb == 0
         ):
             with torch.no_grad():
                 latents = self.encoder_forward(vis_images)
@@ -966,13 +965,13 @@ class SSDIR(pl.LightningModule):
         self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
     ):
         """Step for training."""
-        return self.common_run_step(batch, stage="train")
+        return self.common_run_step(batch, batch_nb, stage="train")
 
     def validation_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
     ):
         """Step for validation."""
-        return self.common_run_step(batch, stage="val")
+        return self.common_run_step(batch, batch_nb, stage="val")
 
     def configure_optimizers(self):
         """Configure training optimizer."""
