@@ -209,15 +209,20 @@ class Decoder(nn.Module):
     ) -> torch.Tensor:
         """Combine decoded images into one by masked merging."""
         sorted_weights, sort_index = torch.sort(weights, dim=1, descending=True)
-        sorted_reconstructions = reconstructions.gather(
-            dim=1,
-            index=sort_index.view(*sort_index.shape, 1, 1, 1).expand_as(
-                reconstructions
-            ),
-        ).permute(1, 0, 2, 3, 4)
-        outputs = sorted_reconstructions.new_zeros(sorted_reconstructions.shape[1:])
-        for instance_batch in sorted_reconstructions:
-            outputs += instance_batch * torch.where(outputs < 1e-3, 1.0, 0.0)
+        sorted_reconstructions = (
+            reconstructions.gather(
+                dim=1,
+                index=sort_index.view(*sort_index.shape, 1, 1, 1).expand_as(
+                    reconstructions
+                ),
+            )
+            .permute(1, 0, 2, 3, 4)
+            .contiguous()
+        )
+        outputs = sorted_reconstructions[0]
+        for instance_batch in sorted_reconstructions[1:]:
+            mask = torch.where(outputs < 1e-3, 1.0, 0.0)
+            outputs = outputs + instance_batch * mask
         return outputs.clamp_(0.0, 1.0)
 
     def reconstruct_objects(
@@ -811,7 +816,7 @@ class SSDIR(pl.LightningModule):
 
         output = vis_objects.new_zeros(vis_objects.shape[1:])
         for idx, obj in enumerate(vis_objects):
-            filtered_obj = obj * torch.where(output == 0, 1.0, 0.8)
+            filtered_obj = obj * torch.where(output == 0, 1.0, 0.3)
             output += filtered_obj
             obj_image = PILImage.fromarray(
                 (filtered_obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
