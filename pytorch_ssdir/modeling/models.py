@@ -322,9 +322,10 @@ class SSDIR(pl.LightningModule):
         num_workers: int = 8,
         pin_memory: bool = True,
         z_what_size: int = 64,
-        z_where_scale_eps: float = 0.15,
         z_present_p_prior: float = 0.01,
-        z_where_prior: float = 0.5,
+        z_where_loc_prior: float = 0.5,
+        z_where_scale_prior: float = 0.25,
+        z_where_scale: float = 0.05,
         drop: bool = True,
         what_coef: float = 1.0,
         where_coef: float = 1.0,
@@ -354,9 +355,10 @@ class SSDIR(pl.LightningModule):
         :param num_workers: number of workers for dataloader
         :param pin_memory: pin memory for training
         :param z_what_size: latent what size
-        :param z_where_scale_eps: default where scale constant
         :param z_present_p_prior: present prob prior
-        :param z_where_prior: where prior
+        :param z_where_loc_prior: prior z_where loc
+        :param z_where_scale_prior: prior z_where scale
+        :param z_where_scale: z_where scale used in inference
         :param drop: drop empty objects' latents
         :param what_coef: z_what loss component coefficient
         :param where_coef: z_where loss component coefficient
@@ -410,9 +412,10 @@ class SSDIR(pl.LightningModule):
         self.data_dir = ssd_model.data_dir
 
         self.z_what_size = z_what_size
-        self.z_where_scale_eps = z_where_scale_eps
         self.z_present_p_prior = z_present_p_prior
-        self.z_where_prior = z_where_prior
+        self.z_where_loc_prior = z_where_loc_prior
+        self.z_where_scale_prior = z_where_scale_prior
+        self.z_where_scale = z_where_scale
         self.drop = drop
 
         self.what_coef = what_coef
@@ -497,19 +500,25 @@ class SSDIR(pl.LightningModule):
             "--z-what-size", type=int, default=64, help="z_what latent size"
         )
         parser.add_argument(
-            "--z-where-scale-eps",
-            type=float,
-            default=0.15,
-            help="z_where scale constant",
-        )
-        parser.add_argument(
             "--z-present-p-prior",
             type=float,
             default=0.01,
             help="z_present probability prior",
         )
         parser.add_argument(
-            "--z-where-prior", type=float, default=0.5, help="z_present prior"
+            "--z-where-loc-prior", type=float, default=0.5, help="prior z_where loc"
+        )
+        parser.add_argument(
+            "--z-where-scale-prior",
+            type=float,
+            default=0.25,
+            help="prior z_where scale",
+        )
+        parser.add_argument(
+            "--z-where-scale",
+            type=float,
+            default=0.05,
+            help="z_where scale used in inference",
         )
         parser.add_argument(
             "--drop",
@@ -684,10 +693,10 @@ class SSDIR(pl.LightningModule):
             z_what_scale = torch.ones_like(z_what_loc)
 
             z_where_loc = x.new_full(
-                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
+                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_loc_prior
             )
             z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_eps
+                z_where_loc, fill_value=self.z_where_scale_prior
             )
 
             z_present_p = x.new_full(
@@ -735,9 +744,7 @@ class SSDIR(pl.LightningModule):
                 z_present_p,
                 (z_depth_loc, z_depth_scale),
             ) = self.encoder(x)
-            z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_eps
-            )
+            z_where_scale = torch.full_like(z_where_loc, fill_value=self.z_where_scale)
 
             with poutine.scale(scale=self.what_coef / z_what_loc.numel()):
                 pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
