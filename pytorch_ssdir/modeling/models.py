@@ -707,29 +707,29 @@ class SSDIR(pl.LightningModule):
             z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
             z_depth_scale = torch.ones_like(z_depth_loc)
 
-            with poutine.scale(scale=self.what_coef / z_what_loc.numel()):
+            with poutine.scale(scale=self.what_coef):
                 z_what = pyro.sample(
                     "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
                 )
 
-            with poutine.scale(scale=self.where_coef / z_where_loc.numel()):
+            with poutine.scale(scale=self.where_coef):
                 z_where = pyro.sample(
                     "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
                 )
 
-            with poutine.scale(scale=self.present_coef / z_present_p.numel()):
+            with poutine.scale(scale=self.present_coef):
                 z_present = pyro.sample(
                     "z_present", dist.Bernoulli(z_present_p).to_event(2)
                 )
 
-            with poutine.scale(scale=self.depth_coef / z_depth_loc.numel()):
+            with poutine.scale(scale=self.depth_coef):
                 z_depth = pyro.sample(
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
 
             output = self.decoder((z_what, z_where, z_present, z_depth))
 
-            with poutine.scale(scale=self.rec_coef / output.numel()):
+            with poutine.scale(scale=self.rec_coef):
                 pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=x)
 
     def guide(self, x: torch.Tensor):
@@ -746,18 +746,18 @@ class SSDIR(pl.LightningModule):
             ) = self.encoder(x)
             z_where_scale = torch.full_like(z_where_loc, fill_value=self.z_where_scale)
 
-            with poutine.scale(scale=self.what_coef / z_what_loc.numel()):
+            with poutine.scale(scale=self.what_coef):
                 pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
 
-            with poutine.scale(scale=self.where_coef / z_where_loc.numel()):
+            with poutine.scale(scale=self.where_coef):
                 pyro.sample(
                     "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
                 )
 
-            with poutine.scale(scale=self.present_coef / z_present_p.numel()):
+            with poutine.scale(scale=self.present_coef):
                 pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
 
-            with poutine.scale(scale=self.depth_coef / z_depth_loc.numel()):
+            with poutine.scale(scale=self.depth_coef):
                 pyro.sample(
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
