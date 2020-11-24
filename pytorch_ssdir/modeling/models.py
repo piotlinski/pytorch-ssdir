@@ -350,6 +350,7 @@ class SSDIR(pl.LightningModule):
         z_where_scale_prior: float = 0.25,
         z_where_scale: float = 0.05,
         drop: bool = True,
+        weighted_merge: bool = False,
         what_coef: float = 1.0,
         where_coef: float = 1.0,
         present_coef: float = 1.0,
@@ -383,6 +384,7 @@ class SSDIR(pl.LightningModule):
         :param z_where_scale_prior: prior z_where scale
         :param z_where_scale: z_where scale used in inference
         :param drop: drop empty objects' latents
+        :param weighted_merge: merge output images using weighted sum (else: masked)
         :param what_coef: z_what loss component coefficient
         :param where_coef: z_where loss component coefficient
         :param present_coef: z_present loss component coefficient
@@ -414,6 +416,7 @@ class SSDIR(pl.LightningModule):
             ssd=ssd_model,
             z_what_size=z_what_size,
             drop_empty=drop,
+            weighted_merge=weighted_merge,
             train_what=train_what,
         )
 
@@ -550,6 +553,15 @@ class SSDIR(pl.LightningModule):
             help="Drop empty objects' latents",
         )
         parser.add_argument("--no-drop", dest="drop", action="store_false")
+        parser.add_argument(
+            "--weighted-merge",
+            default=False,
+            action="store_true",
+            help="Use weighted output merging method",
+        )
+        parser.add_argument(
+            "--masked-merge", dest="weighted_merge", action="store_false"
+        )
         parser.add_argument(
             "--what-coef",
             type=float,
