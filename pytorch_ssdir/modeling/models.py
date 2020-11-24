@@ -109,6 +109,7 @@ class Decoder(nn.Module):
         ssd: SSD,
         z_what_size: int = 64,
         drop_empty: bool = True,
+        weighted_merge: bool = False,
         train_what: bool = True,
     ):
         super().__init__()
@@ -122,6 +123,7 @@ class Decoder(nn.Module):
             requires_grad=False,
         )
         self.drop = drop_empty
+        self.weighted = weighted_merge
         self.empty_obj_const = nn.Parameter(torch.tensor(-1000.0), requires_grad=False)
         self.bg_where = nn.Parameter(
             torch.tensor([0.5, 0.5, 1.0, 1.0]), requires_grad=False
@@ -204,7 +206,7 @@ class Decoder(nn.Module):
         return images, z_depth
 
     @staticmethod
-    def merge_reconstructions(
+    def merge_reconstructions_masked(
         reconstructions: torch.Tensor, weights: torch.Tensor
     ) -> torch.Tensor:
         """Combine decoded images into one by masked merging."""
@@ -224,6 +226,16 @@ class Decoder(nn.Module):
             mask = torch.where(outputs < 1e-3, 1.0, 0.0)
             outputs = outputs + instance_batch * mask
         return outputs.clamp_(0.0, 1.0)
+
+    @staticmethod
+    def merge_reconstructions_weighted(
+        reconstructions: torch.Tensor, weights: torch.Tensor
+    ) -> torch.Tensor:
+        """Combine decoder images into one by weighted sum."""
+        weighted_images = reconstructions * functional.softmax(weights, dim=1).view(
+            *weights.shape[:2], 1, 1, 1
+        )
+        return torch.sum(weighted_images, dim=1)
 
     def reconstruct_objects(
         self,
@@ -307,9 +319,15 @@ class Decoder(nn.Module):
             z_what, z_where, z_present, z_depth
         )
         # merge reconstructions
-        return self.merge_reconstructions(
-            reconstructions=reconstructions, weights=depths
-        )
+        if self.weighted:
+            output = self.merge_reconstructions_weighted(
+                reconstructions=reconstructions, weights=depths
+            )
+        else:
+            output = self.merge_reconstructions_masked(
+                reconstructions=reconstructions, weights=depths
+            )
+        return output
 
 
 class SSDIR(pl.LightningModule):

@@ -69,7 +69,7 @@ def test_scale_boxes(boxes, expected):
     """Verify converting xywh boxes to sxy."""
     transformer = WhereTransformer(image_size=1)
     scaled_boxes = transformer.scale_boxes(boxes)
-    assert (scaled_boxes == expected).all()
+    assert torch.equal(scaled_boxes, expected)
 
 
 @pytest.mark.parametrize(
@@ -90,4 +90,4 @@ def test_scale_boxes(boxes, expected):
 def test_expand_convert_boxes_to_theta(boxes, expected):
     """Verify expanding boxes to transformation matrix."""
     transformation_mtx = WhereTransformer.convert_boxes_to_theta(boxes)
-    assert (transformation_mtx == expected).all()
+    assert torch.equal(transformation_mtx, expected)
