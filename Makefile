@@ -16,6 +16,9 @@ build.dev: ## Build docker development image
 build.prod: ## Build docker production image
 	docker build --build-arg WANDB_API_KEY=$(WANDB_API_KEY) -f dockerfiles/Dockerfile.prod -t $(tag) .
 
+build: ## Build docker image with all dependencies
+	docker build --build-arg WANDB_API_KEY=$(WANDB_API_KEY) -f dockerfiles/Dockerfile.all -t piotrekzie100/dev:all .
+
 shell: ## Run docker dev shell
 	$(DOCKER_RUN) -it $(tag)-dev /bin/bash
 
