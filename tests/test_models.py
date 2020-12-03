@@ -83,18 +83,20 @@ def test_pad_indices(n_present, expected):
     indices = Decoder.pad_indices(n_present)
     assert indices.shape == (n_present.shape[0] * (torch.max(n_present)),)
     assert torch.max(indices) == torch.sum(n_present)
-    assert (indices == expected).all()
+    assert torch.equal(indices, expected)
 
 
 @pytest.mark.parametrize(
-    "inputs, weights, expected",
+    "merge_function, inputs, weights, expected",
     [
         (
+            Decoder.merge_reconstructions_masked,
             torch.tensor([[[[[1.0, 0.0], [0.0, 0.0]]], [[[0.5, 0.5], [0.5, 0.5]]]]]),
             torch.tensor([[0.3, 0.2]]),
             torch.tensor([[[[[1.0, 0.5], [0.5, 0.5]]]]]),
         ),
         (
+            Decoder.merge_reconstructions_masked,
             torch.tensor(
                 [
                     [[[[0.2, 0.0], [0.1, 0.0]]], [[[0.4, 0.3], [0.0, 0.1]]]],
@@ -104,13 +106,25 @@ def test_pad_indices(n_present, expected):
             torch.tensor([[0.2, 0.5], [0.4, 0.1]]),
             torch.tensor([[[[0.4, 0.3], [0.1, 0.1]]], [[[0.4, 0.3], [0.2, 0.1]]]]),
         ),
+        (
+            Decoder.merge_reconstructions_weighted,
+            torch.ones(1, 2, 3, 5, 5),
+            torch.tensor([[0.3, 0.2]]),
+            torch.ones(1, 3, 5, 5),
+        ),
+        (
+            Decoder.merge_reconstructions_weighted,
+            torch.ones(2, 3, 3, 2, 2),
+            torch.tensor([[0.2, 0.5, 0.3], [0.1, 0.4, 0.5]]),
+            torch.ones(2, 3, 2, 2),
+        ),
     ],
 )
-def test_merge_reconstructions(inputs, weights, expected):
-    """Verify mask-based reconstructions merging."""
-    merged = Decoder.merge_reconstructions(inputs, weights=weights)
+def test_merge_reconstructions(merge_function, inputs, weights, expected):
+    """Verify reconstructions merging."""
+    merged = merge_function(inputs, weights=weights)
     assert merged.shape == (inputs.shape[0], *inputs.shape[2:])
-    assert (merged == expected).all()
+    assert torch.all(torch.le(torch.abs(merged - expected), 1e-3))
 
 
 @pytest.mark.parametrize("batch_size", [2, 4, 8])
