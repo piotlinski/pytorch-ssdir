@@ -21,17 +21,10 @@ repos:
       - id: black
 
   - repo: https://gitlab.com/pycqa/flake8
-    rev: 3.8.3
+    rev: 3.8.4
     hooks:
       - id: flake8
-        additional_dependencies: [
-            flake8-bugbear,
-            # Handle assigment expression https://www.python.org/dev/peps/pep-0572/
-            "-e",
-            "git+https://github.com/pycqa/pyflakes#egg=pyflakes",
-            "-e",
-            "git+https://github.com/pycqa/pycodestyle#egg=pycodestyle",
-          ]
+        additional_dependencies: [flake8-bugbear, pyflakes, pycodestyle]
         args: [--config=pyproject.toml]
 
   - repo: https://github.com/pre-commit/mirrors-mypy

@@ -109,6 +109,7 @@ class Decoder(nn.Module):
         ssd: SSD,
         z_what_size: int = 64,
         drop_empty: bool = True,
+        weighted_merge: bool = False,
         train_what: bool = True,
     ):
         super().__init__()
@@ -122,6 +123,7 @@ class Decoder(nn.Module):
             requires_grad=False,
         )
         self.drop = drop_empty
+        self.weighted = weighted_merge
         self.empty_obj_const = nn.Parameter(torch.tensor(-1000.0), requires_grad=False)
         self.bg_where = nn.Parameter(
             torch.tensor([0.5, 0.5, 1.0, 1.0]), requires_grad=False
@@ -204,21 +206,36 @@ class Decoder(nn.Module):
         return images, z_depth
 
     @staticmethod
-    def merge_reconstructions(
+    def merge_reconstructions_masked(
         reconstructions: torch.Tensor, weights: torch.Tensor
     ) -> torch.Tensor:
         """Combine decoded images into one by masked merging."""
         sorted_weights, sort_index = torch.sort(weights, dim=1, descending=True)
-        sorted_reconstructions = reconstructions.gather(
-            dim=1,
-            index=sort_index.view(*sort_index.shape, 1, 1, 1).expand_as(
-                reconstructions
-            ),
-        ).permute(1, 0, 2, 3, 4)
-        outputs = sorted_reconstructions.new_zeros(sorted_reconstructions.shape[1:])
-        for instance_batch in sorted_reconstructions:
-            outputs += instance_batch * torch.where(outputs < 1e-3, 1.0, 0.0)
+        sorted_reconstructions = (
+            reconstructions.gather(
+                dim=1,
+                index=sort_index.view(*sort_index.shape, 1, 1, 1).expand_as(
+                    reconstructions
+                ),
+            )
+            .permute(1, 0, 2, 3, 4)
+            .contiguous()
+        )
+        outputs = sorted_reconstructions[0]
+        for instance_batch in sorted_reconstructions[1:]:
+            mask = torch.where(outputs < 1e-3, 1.0, 0.0)
+            outputs = outputs + instance_batch * mask
         return outputs.clamp_(0.0, 1.0)
+
+    @staticmethod
+    def merge_reconstructions_weighted(
+        reconstructions: torch.Tensor, weights: torch.Tensor
+    ) -> torch.Tensor:
+        """Combine decoder images into one by weighted sum."""
+        weighted_images = reconstructions * functional.softmax(weights, dim=1).view(
+            *weights.shape[:2], 1, 1, 1
+        )
+        return torch.sum(weighted_images, dim=1)
 
     def reconstruct_objects(
         self,
@@ -302,9 +319,15 @@ class Decoder(nn.Module):
             z_what, z_where, z_present, z_depth
         )
         # merge reconstructions
-        return self.merge_reconstructions(
-            reconstructions=reconstructions, weights=depths
-        )
+        if self.weighted:
+            output = self.merge_reconstructions_weighted(
+                reconstructions=reconstructions, weights=depths
+            )
+        else:
+            output = self.merge_reconstructions_masked(
+                reconstructions=reconstructions, weights=depths
+            )
+        return output
 
 
 class SSDIR(pl.LightningModule):
@@ -322,10 +345,12 @@ class SSDIR(pl.LightningModule):
         num_workers: int = 8,
         pin_memory: bool = True,
         z_what_size: int = 64,
-        z_where_scale_eps: float = 0.15,
         z_present_p_prior: float = 0.01,
-        z_where_prior: float = 0.5,
+        z_where_loc_prior: float = 0.5,
+        z_where_scale_prior: float = 0.25,
+        z_where_scale: float = 0.05,
         drop: bool = True,
+        weighted_merge: bool = False,
         what_coef: float = 1.0,
         where_coef: float = 1.0,
         present_coef: float = 1.0,
@@ -354,10 +379,12 @@ class SSDIR(pl.LightningModule):
         :param num_workers: number of workers for dataloader
         :param pin_memory: pin memory for training
         :param z_what_size: latent what size
-        :param z_where_scale_eps: default where scale constant
         :param z_present_p_prior: present prob prior
-        :param z_where_prior: where prior
+        :param z_where_loc_prior: prior z_where loc
+        :param z_where_scale_prior: prior z_where scale
+        :param z_where_scale: z_where scale used in inference
         :param drop: drop empty objects' latents
+        :param weighted_merge: merge output images using weighted sum (else: masked)
         :param what_coef: z_what loss component coefficient
         :param where_coef: z_where loss component coefficient
         :param present_coef: z_present loss component coefficient
@@ -389,6 +416,7 @@ class SSDIR(pl.LightningModule):
             ssd=ssd_model,
             z_what_size=z_what_size,
             drop_empty=drop,
+            weighted_merge=weighted_merge,
             train_what=train_what,
         )
 
@@ -410,9 +438,10 @@ class SSDIR(pl.LightningModule):
         self.data_dir = ssd_model.data_dir
 
         self.z_what_size = z_what_size
-        self.z_where_scale_eps = z_where_scale_eps
         self.z_present_p_prior = z_present_p_prior
-        self.z_where_prior = z_where_prior
+        self.z_where_loc_prior = z_where_loc_prior
+        self.z_where_scale_prior = z_where_scale_prior
+        self.z_where_scale = z_where_scale
         self.drop = drop
 
         self.what_coef = what_coef
@@ -497,19 +526,25 @@ class SSDIR(pl.LightningModule):
             "--z-what-size", type=int, default=64, help="z_what latent size"
         )
         parser.add_argument(
-            "--z-where-scale-eps",
-            type=float,
-            default=0.15,
-            help="z_where scale constant",
-        )
-        parser.add_argument(
             "--z-present-p-prior",
             type=float,
             default=0.01,
             help="z_present probability prior",
         )
         parser.add_argument(
-            "--z-where-prior", type=float, default=0.5, help="z_present prior"
+            "--z-where-loc-prior", type=float, default=0.5, help="prior z_where loc"
+        )
+        parser.add_argument(
+            "--z-where-scale-prior",
+            type=float,
+            default=0.25,
+            help="prior z_where scale",
+        )
+        parser.add_argument(
+            "--z-where-scale",
+            type=float,
+            default=0.05,
+            help="z_where scale used in inference",
         )
         parser.add_argument(
             "--drop",
@@ -518,6 +553,15 @@ class SSDIR(pl.LightningModule):
             help="Drop empty objects' latents",
         )
         parser.add_argument("--no-drop", dest="drop", action="store_false")
+        parser.add_argument(
+            "--weighted-merge",
+            default=False,
+            action="store_true",
+            help="Use weighted output merging method",
+        )
+        parser.add_argument(
+            "--masked-merge", dest="weighted_merge", action="store_false"
+        )
         parser.add_argument(
             "--what-coef",
             type=float,
@@ -684,10 +728,10 @@ class SSDIR(pl.LightningModule):
             z_what_scale = torch.ones_like(z_what_loc)
 
             z_where_loc = x.new_full(
-                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_prior
+                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_loc_prior
             )
             z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_eps
+                z_where_loc, fill_value=self.z_where_scale_prior
             )
 
             z_present_p = x.new_full(
@@ -698,29 +742,29 @@ class SSDIR(pl.LightningModule):
             z_depth_loc = x.new_zeros((batch_size, self.n_objects, 1))
             z_depth_scale = torch.ones_like(z_depth_loc)
 
-            with poutine.scale(scale=self.what_coef / z_what_loc.numel()):
+            with poutine.scale(scale=self.what_coef):
                 z_what = pyro.sample(
                     "z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2)
                 )
 
-            with poutine.scale(scale=self.where_coef / z_where_loc.numel()):
+            with poutine.scale(scale=self.where_coef):
                 z_where = pyro.sample(
                     "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
                 )
 
-            with poutine.scale(scale=self.present_coef / z_present_p.numel()):
+            with poutine.scale(scale=self.present_coef):
                 z_present = pyro.sample(
                     "z_present", dist.Bernoulli(z_present_p).to_event(2)
                 )
 
-            with poutine.scale(scale=self.depth_coef / z_depth_loc.numel()):
+            with poutine.scale(scale=self.depth_coef):
                 z_depth = pyro.sample(
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
 
             output = self.decoder((z_what, z_where, z_present, z_depth))
 
-            with poutine.scale(scale=self.rec_coef / output.numel()):
+            with poutine.scale(scale=self.rec_coef):
                 pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=x)
 
     def guide(self, x: torch.Tensor):
@@ -735,22 +779,20 @@ class SSDIR(pl.LightningModule):
                 z_present_p,
                 (z_depth_loc, z_depth_scale),
             ) = self.encoder(x)
-            z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_eps
-            )
+            z_where_scale = torch.full_like(z_where_loc, fill_value=self.z_where_scale)
 
-            with poutine.scale(scale=self.what_coef / z_what_loc.numel()):
+            with poutine.scale(scale=self.what_coef):
                 pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
 
-            with poutine.scale(scale=self.where_coef / z_where_loc.numel()):
+            with poutine.scale(scale=self.where_coef):
                 pyro.sample(
                     "z_where", dist.Normal(z_where_loc, z_where_scale).to_event(2)
                 )
 
-            with poutine.scale(scale=self.present_coef / z_present_p.numel()):
+            with poutine.scale(scale=self.present_coef):
                 pyro.sample("z_present", dist.Bernoulli(z_present_p).to_event(2))
 
-            with poutine.scale(scale=self.depth_coef / z_depth_loc.numel()):
+            with poutine.scale(scale=self.depth_coef):
                 pyro.sample(
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
@@ -804,7 +846,7 @@ class SSDIR(pl.LightningModule):
 
         output = vis_objects.new_zeros(vis_objects.shape[1:])
         for idx, obj in enumerate(vis_objects):
-            filtered_obj = obj * torch.where(output == 0, 1.0, 0.8)
+            filtered_obj = obj * torch.where(output == 0, 1.0, 0.3)
             output += filtered_obj
             obj_image = PILImage.fromarray(
                 (filtered_obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
@@ -867,6 +909,7 @@ class SSDIR(pl.LightningModule):
     def common_run_step(
         self,
         batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        batch_nb: int,
         stage: str,
     ):
         """Common model running step for training and validation."""
@@ -882,9 +925,8 @@ class SSDIR(pl.LightningModule):
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
-        if (
-            self.visualize_latents
-            and self.global_step % self.visualize_latents_freq == 0
+        if self.visualize_latents and (
+            self.global_step % self.visualize_latents_freq == 0 or batch_nb == 0
         ):
             with torch.no_grad():
                 (
@@ -906,9 +948,8 @@ class SSDIR(pl.LightningModule):
                     {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
-        if (
-            self.visualize_inference
-            and self.global_step % self.visualize_inference_freq == 0
+        if self.visualize_inference and (
+            self.global_step % self.visualize_inference_freq == 0 or batch_nb == 0
         ):
             with torch.no_grad():
                 latents = self.encoder_forward(vis_images)
@@ -959,13 +1000,13 @@ class SSDIR(pl.LightningModule):
         self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
     ):
         """Step for training."""
-        return self.common_run_step(batch, stage="train")
+        return self.common_run_step(batch, batch_nb, stage="train")
 
     def validation_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_nb: int
     ):
         """Step for validation."""
-        return self.common_run_step(batch, stage="val")
+        return self.common_run_step(batch, batch_nb, stage="val")
 
     def configure_optimizers(self):
         """Configure training optimizer."""
