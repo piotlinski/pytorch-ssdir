@@ -1,7 +1,8 @@
 """Main function for SSDIR training."""
 from argparse import ArgumentParser
 
-from pytorch_lightning import Trainer
+import pyro
+from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
@@ -15,6 +16,10 @@ from pytorch_ssdir import SSDIR
 
 def main(hparams):
     """Main function that creates and trains SSDIR model."""
+    if hparams.seed is not None:
+        seed_everything(hparams.seed)
+        pyro.set_rng_seed(hparams.seed)
+
     kwargs = vars(hparams)
     if hparams.ssd_checkpoint is not None:
         ssd = SSD.load_from_checkpoint(checkpoint_path=hparams.ssd_checkpoint, **kwargs)
@@ -58,6 +63,9 @@ def main(hparams):
 def cli():
     """SSDIR CLI with argparse."""
     parser = ArgumentParser(conflict_handler="resolve")
+    parser.add_argument(
+        "-s", "--seed", type=int, default=None, help="Random seed for training"
+    )
     parser.add_argument(
         "-c",
         "--ssdir-checkpoint",
