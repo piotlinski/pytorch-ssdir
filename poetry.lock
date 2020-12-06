@@ -84,7 +84,7 @@ python-versions = "~=3.5"
 
 [[package]]
 name = "certifi"
-version = "2020.11.8"
+version = "2020.12.5"
 description = "Python package for providing Mozilla's CA Bundle."
 category = "main"
 optional = false
@@ -853,7 +853,7 @@ test = ["coverage (>=5.0)", "codecov (>=2.1)", "pytest (>=5.0)", "pytest-cov", "
 
 [[package]]
 name = "pytorch-ssd"
-version = "1.1.0"
+version = "1.2.0"
 description = "Single Shot Multi-Box Detector implementation in PyTorch"
 category = "main"
 optional = false
@@ -1071,7 +1071,7 @@ python-versions = "*"
 
 [[package]]
 name = "tifffile"
-version = "2020.11.26"
+version = "2020.12.4"
 description = "Read and write TIFF(r) files"
 category = "main"
 optional = false
@@ -1123,7 +1123,7 @@ scipy = ["scipy"]
 
 [[package]]
 name = "tqdm"
-version = "4.54.0"
+version = "4.54.1"
 description = "Fast, Extensible Progress Meter"
 category = "main"
 optional = false
@@ -1169,7 +1169,7 @@ socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
 
 [[package]]
 name = "wandb"
-version = "0.10.11"
+version = "0.10.12"
 description = "A CLI and library for interacting with the Weights and Biases API."
 category = "main"
 optional = false
@@ -1235,7 +1235,7 @@ watchdog = ["watchdog"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "4adcd23c8d0c943a82ffaf996adafc088518b04e6866f3e9df385c1a4c220093"
+content-hash = "1cc48c8c422ebbbe0e240f7230a35429b7d21089e019893d7064c9f45d055b2a"
 
 [metadata.files]
 absl-py = [
@@ -1271,8 +1271,8 @@ cachetools = [
     {file = "cachetools-4.1.1.tar.gz", hash = "sha256:bbaa39c3dede00175df2dc2b03d0cf18dd2d32a7de7beb68072d13043c9edb20"},
 ]
 certifi = [
-    {file = "certifi-2020.11.8-py2.py3-none-any.whl", hash = "sha256:1f422849db327d534e3d0c5f02a263458c3955ec0aae4ff09b95f195c59f4edd"},
-    {file = "certifi-2020.11.8.tar.gz", hash = "sha256:f05def092c44fbf25834a51509ef6e631dc19765ab8a57b4e7ab85531f0a9cf4"},
+    {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
+    {file = "certifi-2020.12.5.tar.gz", hash = "sha256:1a4995114262bffbc2413b159f2a1a480c969de6e6eb13ee966d470af86af59c"},
 ]
 chardet = [
     {file = "chardet-3.0.4-py2.py3-none-any.whl", hash = "sha256:fc323ffcaeaed0e0a02bf4d117757b98aed530d9ed4531e3e15460124c106691"},
@@ -1845,7 +1845,7 @@ pytorch-lightning = [
     {file = "pytorch_lightning-1.0.8-py3-none-any.whl", hash = "sha256:fa1922423260da0232315e88b38633703ff4e822fb419ffeaee539ede9dbf56b"},
 ]
 pytorch-ssd = [
-    {file = "pytorch_ssd-1.1.0-py3-none-any.whl", hash = "sha256:cc964b9ae938af3d0a18304291d4771a51e388b9ddc2dcd8e2381a8b2e8a34f4"},
+    {file = "pytorch_ssd-1.2.0-py3-none-any.whl", hash = "sha256:db75cd8b6586d1a8f65cf84534196d9ab0bda81366901f0766e64659761abdab"},
 ]
 pywavelets = [
     {file = "PyWavelets-1.1.1-cp35-cp35m-macosx_10_6_intel.whl", hash = "sha256:35959c041ec014648575085a97b498eafbbaa824f86f6e4a59bfdef8a3fe6308"},
@@ -1986,8 +1986,8 @@ tensorboard-plugin-wit = [
     {file = "tensorboard_plugin_wit-1.7.0-py3-none-any.whl", hash = "sha256:ee775f04821185c90d9a0e9c56970ee43d7c41403beb6629385b39517129685b"},
 ]
 tifffile = [
-    {file = "tifffile-2020.11.26-py3-none-any.whl", hash = "sha256:b72261cb2af1b622642368419d066339740965027301580878a166e4aa9902b0"},
-    {file = "tifffile-2020.11.26.tar.gz", hash = "sha256:c712df6f201385fbd3500e26e45dc20fabcbb0c6c1fbfb4c1e44538a9d0269a8"},
+    {file = "tifffile-2020.12.4-py3-none-any.whl", hash = "sha256:c6c043ad28742c638ea20cee279b0f1a4da6b7fc57a37f7bf78861d4da11e2fe"},
+    {file = "tifffile-2020.12.4.tar.gz", hash = "sha256:5a388f8f3ca3f69a62f7c1cda72837fa5e9070e89992e7702408a786d526b3ff"},
 ]
 toml = [
     {file = "toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b"},
@@ -2010,8 +2010,8 @@ torchvision = [
     {file = "torchvision-0.8.1-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:337820e680e5193872903369d8177d5ea681e7156d370d89d487b0e0f1e56238"},
 ]
 tqdm = [
-    {file = "tqdm-4.54.0-py2.py3-none-any.whl", hash = "sha256:9e7b8ab0ecbdbf0595adadd5f0ebbb9e69010e0bd48bbb0c15e550bf2a5292df"},
-    {file = "tqdm-4.54.0.tar.gz", hash = "sha256:5c0d04e06ccc0da1bd3fa5ae4550effcce42fcad947b4a6cafa77bdc9b09ff22"},
+    {file = "tqdm-4.54.1-py2.py3-none-any.whl", hash = "sha256:d4f413aecb61c9779888c64ddf0c62910ad56dcbe857d8922bb505d4dbff0df1"},
+    {file = "tqdm-4.54.1.tar.gz", hash = "sha256:38b658a3e4ecf9b4f6f8ff75ca16221ae3378b2e175d846b6b33ea3a20852cf5"},
 ]
 traitlets = [
     {file = "traitlets-5.0.5-py3-none-any.whl", hash = "sha256:69ff3f9d5351f31a7ad80443c2674b7099df13cc41fc5fa6e2f6d3b0330b0426"},
@@ -2027,8 +2027,8 @@ urllib3 = [
     {file = "urllib3-1.26.2.tar.gz", hash = "sha256:19188f96923873c92ccb987120ec4acaa12f0461fa9ce5d3d0772bc965a39e08"},
 ]
 wandb = [
-    {file = "wandb-0.10.11-py2.py3-none-any.whl", hash = "sha256:db9e080f10759f2c7366863662319f7fd28123497717aed64494b03968555142"},
-    {file = "wandb-0.10.11.tar.gz", hash = "sha256:2c9fde03b86467d9e2e78774ac26de326749d1cb01c1cb7271ab42f637bf3b53"},
+    {file = "wandb-0.10.12-py2.py3-none-any.whl", hash = "sha256:b3bf35840fd4048d85730e698f10b0fafb7bae05025ee2243793f30300e3f3d8"},
+    {file = "wandb-0.10.12.tar.gz", hash = "sha256:052dd5f59ab1a655a82253bc4603678fe06e0136be097dc1964f1a0c5bd64116"},
 ]
 watchdog = [
     {file = "watchdog-0.10.4.tar.gz", hash = "sha256:e38bffc89b15bafe2a131f0e1c74924cf07dcec020c2e0a26cccd208831fcd43"},
