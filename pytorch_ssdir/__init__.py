@@ -1,3 +1,3 @@
-from pytorch_ssdir.modeling.models import SSDIR, Decoder, Encoder
+from pytorch_ssdir.main import cli
 
-__all__ = ["Decoder", "Encoder", "SSDIR"]
+__all__ = ["cli"]
