@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import (
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_ssd.modeling.model import SSD
 
-from pytorch_ssdir import SSDIR
+from pytorch_ssdir.modeling import SSDIR
 
 
 def main(hparams):
