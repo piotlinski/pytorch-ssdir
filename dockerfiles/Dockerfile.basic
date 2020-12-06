@@ -1,0 +1,56 @@
+# --- BASE IMAGE ---
+FROM python:3.8-slim as builder
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=on \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100 \
+    POETRY_VERSION=1.1.4 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1 \
+    PYSETUP_PATH="/opt/pysetup" \
+    VENV_PATH="/opt/pysetup/.venv" \
+    MPLCONFIGDIR=/tmp/mpl
+
+ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y curl build-essential cmake
+
+RUN curl -sSL https://raw.githubusercontent.com/sdispater/poetry/master/get-poetry.py | python
+
+WORKDIR $PYSETUP_PATH
+COPY poetry.lock pyproject.toml ./
+COPY pytorch_ssdir ./pytorch_ssdir
+RUN poetry export -f requirements.txt --output requirements.txt
+
+# --- DEV IMAGE ---
+FROM piotrekzie100/pytorch:1.7.0-py38-cuda10.2
+
+ARG WANDB_API_KEY
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=on \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100 \
+    PYSETUP_PATH="/opt/pysetup" \
+    VENV_PATH="/opt/pysetup/.venv" \
+    MPLCONFIGDIR=/tmp/mpl \
+    TORCH_HOME="/app/pretrained" \
+    WANDB_API_KEY=${WANDB_API_KEY}
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y gosu libgl1-mesa-glx ffmpeg libsm6 libxext6
+
+COPY --from=builder $PYSETUP_PATH/requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
+RUN rm -rf /tmp/requirements.txt
+
+COPY dockerfiles/entrypoint.sh /usr/local/bin/
+RUN ln -s /usr/local/bin/entrypoint.sh /
+ENTRYPOINT ["entrypoint.sh"]
+
+WORKDIR /app
