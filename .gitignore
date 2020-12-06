@@ -223,5 +223,8 @@ data/*
 # wandb runs directory
 runs/*
 
+# pretrained dir
+pretrained/*
+
 # env file
 .env
