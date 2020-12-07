@@ -430,8 +430,6 @@ class SSDIR(pl.LightningModule):
         self.pin_memory = pin_memory
 
         self.image_size = ssd_model.image_size
-        self.pixel_mean = ssd_model.pixel_mean
-        self.pixel_std = ssd_model.pixel_std
         self.flip_train = ssd_model.flip_train
         self.augment_colors_train = ssd_model.augment_colors_train
         self.dataset = ssd_model.dataset
@@ -1040,8 +1038,8 @@ class SSDIR(pl.LightningModule):
         """Prepare train dataloader."""
         data_transform = TrainDataTransform(
             image_size=self.image_size,
-            pixel_mean=self.pixel_mean,
-            pixel_std=self.pixel_std,
+            pixel_mean=self.ssd_backbone.PIXEL_MEANS,
+            pixel_std=self.ssd_backbone.PIXEL_STDS,
             flip=self.flip_train,
             augment_colors=self.augment_colors_train,
         )
@@ -1063,8 +1061,8 @@ class SSDIR(pl.LightningModule):
         """Prepare validation dataloader."""
         data_transform = DataTransform(
             image_size=self.image_size,
-            pixel_mean=self.pixel_mean,
-            pixel_std=self.pixel_std,
+            pixel_mean=self.ssd_backbone.PIXEL_MEANS,
+            pixel_std=self.ssd_backbone.PIXEL_STDS,
         )
         dataset = self.dataset(
             self.data_dir,
