@@ -48,6 +48,8 @@ class Encoder(nn.Module):
         self,
         ssd: SSD,
         z_what_size: int = 64,
+        z_what_scale_const: Optional[float] = None,
+        z_depth_scale_const: Optional[float] = None,
         train_what: bool = True,
         train_where: bool = True,
         train_present: bool = True,
@@ -58,6 +60,7 @@ class Encoder(nn.Module):
         self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
         self.what_enc = WhatEncoder(
             z_what_size=z_what_size,
+            z_what_scale_const=z_what_scale_const,
             feature_channels=ssd.backbone.out_channels,
             feature_maps=ssd.backbone.feature_maps,
         ).requires_grad_(train_what)
@@ -71,7 +74,8 @@ class Encoder(nn.Module):
             ssd_box_predictor=ssd.predictor
         ).requires_grad_(train_present)
         self.depth_enc = DepthEncoder(
-            feature_channels=ssd.backbone.out_channels
+            feature_channels=ssd.backbone.out_channels,
+            z_depth_scale_const=z_depth_scale_const,
         ).requires_grad_(train_depth)
 
     def forward(
@@ -353,6 +357,8 @@ class SSDIR(pl.LightningModule):
         z_where_scale_prior: float = 0.25,
         z_where_scale: float = 0.05,
         drop: bool = True,
+        z_what_scale_const: Optional[float] = None,
+        z_depth_scale_const: Optional[float] = None,
         weighted_merge: bool = False,
         what_coef: float = 1.0,
         where_coef: float = 1.0,
@@ -387,6 +393,8 @@ class SSDIR(pl.LightningModule):
         :param z_where_scale_prior: prior z_where scale
         :param z_where_scale: z_where scale used in inference
         :param drop: drop empty objects' latents
+        :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
+        :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
         :param weighted_merge: merge output images using weighted sum (else: masked)
         :param what_coef: z_what loss component coefficient
         :param where_coef: z_where loss component coefficient
@@ -409,6 +417,8 @@ class SSDIR(pl.LightningModule):
         self.encoder = Encoder(
             ssd=ssd_model,
             z_what_size=z_what_size,
+            z_what_scale_const=z_what_scale_const,
+            z_depth_scale_const=z_depth_scale_const,
             train_what=train_what,
             train_where=train_where,
             train_present=train_present,
@@ -540,7 +550,7 @@ class SSDIR(pl.LightningModule):
         parser.add_argument(
             "--z-where-scale-prior",
             type=float,
-            default=0.25,
+            default=0.05,
             help="prior z_where scale",
         )
         parser.add_argument(
@@ -556,6 +566,18 @@ class SSDIR(pl.LightningModule):
             help="Drop empty objects' latents",
         )
         parser.add_argument("--no-drop", dest="drop", action="store_false")
+        parser.add_argument(
+            "--z-what-scale-const",
+            type=float,
+            default=None,
+            help="constant z_what scale",
+        )
+        parser.add_argument(
+            "--z-depth-scale-const",
+            type=float,
+            default=None,
+            help="constant z_depth scale",
+        )
         parser.add_argument(
             "--weighted-merge",
             default=False,
