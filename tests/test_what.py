@@ -42,6 +42,20 @@ def test_what_encoder_dtype():
     assert (scales > 0).all()
 
 
+def test_what_encoder_constant_scale():
+    """Verify if what encoder returns constant scale when given."""
+    z_what_scale_const = 0.1
+    inputs = [torch.rand(3, 4, 5, 5)]
+    encoder = WhatEncoder(
+        z_what_size=7,
+        feature_channels=[4],
+        feature_maps=[5],
+        z_what_scale_const=z_what_scale_const,
+    )
+    locs, scales = encoder(inputs)
+    assert torch.all(scales == z_what_scale_const)
+
+
 @pytest.mark.parametrize("z_what_size", [2, 4, 5])
 @pytest.mark.parametrize("n_objects", [1, 4, 9])
 def test_what_decoder_dimensions(z_what_size, n_objects):

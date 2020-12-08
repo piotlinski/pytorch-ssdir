@@ -18,15 +18,16 @@ def test_encoder_dimensions(z_what_size, batch_size, ssd_model, n_ssd_features):
         z_present,
         (z_depth_loc, z_depth_scale),
     ) = encoder(inputs)
-    n_objects = sum(features ** 2 for features in ssd_model.backbone.feature_maps)
     assert (
         z_what_loc.shape
         == z_what_scale.shape
-        == (batch_size, n_objects + 1, z_what_size)
+        == (batch_size, n_ssd_features + 1, z_what_size)
     )
-    assert z_where.shape == (batch_size, n_ssd_features, 4)
-    assert z_present.shape == (batch_size, n_ssd_features, 1)
-    assert z_depth_loc.shape == z_depth_scale.shape == (batch_size, n_objects, 1)
+    assert z_where.shape == (batch_size, n_ssd_features + 1, 4)
+    assert z_present.shape == (batch_size, n_ssd_features + 1, 1)
+    assert (
+        z_depth_loc.shape == z_depth_scale.shape == (batch_size, n_ssd_features + 1, 1)
+    )
 
 
 @pytest.mark.parametrize(
@@ -56,9 +57,9 @@ def test_disabling_encoder_modules(modules_enabled, ssd_model):
         )
 
 
-def test_reconstruction_indices(ssd_model, n_ssd_features):
-    """Verify reconstruction indices calculation."""
-    indices = Decoder.reconstruction_indices(
+def test_latents_indices(ssd_model, n_ssd_features):
+    """Verify latents indices calculation."""
+    indices = Encoder.latents_indices(
         feature_maps=ssd_model.backbone.feature_maps,
         boxes_per_loc=ssd_model.backbone.boxes_per_loc,
     )
@@ -130,12 +131,11 @@ def test_merge_reconstructions(merge_function, inputs, weights, expected):
 @pytest.mark.parametrize("batch_size", [2, 4, 8])
 def test_decoder_dimensions(batch_size, ssd_model, n_ssd_features):
     """Verify decoder output dimensions."""
-    n_objects = sum(features ** 2 for features in ssd_model.backbone.feature_maps)
     z_what_size = 3
-    z_what = torch.rand(batch_size, n_objects + 1, z_what_size)
-    z_where = torch.rand(batch_size, n_ssd_features, 4)
-    z_present = torch.randint(0, 100, (batch_size, n_ssd_features, 1))
-    z_depth = torch.rand(batch_size, n_objects, 1)
+    z_what = torch.rand(batch_size, n_ssd_features + 1, z_what_size)
+    z_where = torch.rand(batch_size, n_ssd_features + 1, 4)
+    z_present = torch.randint(0, 100, (batch_size, n_ssd_features + 1, 1))
+    z_depth = torch.rand(batch_size, n_ssd_features + 1, 1)
     inputs = (z_what, z_where, z_present, z_depth)
     decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size)
     outputs = decoder(inputs)
@@ -169,14 +169,13 @@ def test_ssdir_encoder_forward(z_what_size, batch_size, ssd_model, n_ssd_feature
     latents = model.encoder_forward(inputs)
     z_what, z_where, z_present, z_depth = latents
 
-    n_objects = sum(features ** 2 for features in ssd_model.backbone.feature_maps)
-    assert z_what.shape == (batch_size, n_objects + 1, z_what_size)
+    assert z_what.shape == (batch_size, n_ssd_features + 1, z_what_size)
     assert z_what.dtype == torch.float
-    assert z_where.shape == (batch_size, n_ssd_features, 4)
+    assert z_where.shape == (batch_size, n_ssd_features + 1, 4)
     assert z_where.dtype == torch.float
-    assert z_present.shape == (batch_size, n_ssd_features, 1)
+    assert z_present.shape == (batch_size, n_ssd_features + 1, 1)
     assert z_present.dtype == torch.float
-    assert z_depth.shape == (batch_size, n_objects, 1)
+    assert z_depth.shape == (batch_size, n_ssd_features + 1, 1)
     assert z_depth.dtype == torch.float
 
 
@@ -195,11 +194,10 @@ def test_ssdir_decoder_forward(
         batch_size=batch_size,
     )
 
-    n_objects = sum(features ** 2 for features in ssd_model.backbone.feature_maps)
-    z_what = torch.rand(batch_size, n_objects + 1, z_what_size)
-    z_where = torch.rand(batch_size, n_ssd_features, 4)
-    z_present = torch.randint(0, 100, (batch_size, n_ssd_features, 1))
-    z_depth = torch.rand(batch_size, n_objects, 1)
+    z_what = torch.rand(batch_size, n_ssd_features + 1, z_what_size)
+    z_where = torch.rand(batch_size, n_ssd_features + 1, 4)
+    z_present = torch.randint(0, 100, (batch_size, n_ssd_features + 1, 1))
+    z_depth = torch.rand(batch_size, n_ssd_features + 1, 1)
     latents = (z_what, z_where, z_present, z_depth)
     outputs = model.decoder_forward(latents)
 
