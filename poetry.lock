@@ -853,7 +853,7 @@ test = ["coverage (>=5.0)", "codecov (>=2.1)", "pytest (>=5.0)", "pytest-cov", "
 
 [[package]]
 name = "pytorch-ssd"
-version = "1.3.0"
+version = "1.3.1"
 description = "Single Shot Multi-Box Detector implementation in PyTorch"
 category = "main"
 optional = false
@@ -1235,7 +1235,7 @@ watchdog = ["watchdog"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "8771cd57edb67ece849a1b7a7e36e431d6537878156ec4760b8564662fbaabfa"
+content-hash = "ce51ac813d406c55f71210ad2862e170631bf5de26d29801d960982fa4dae845"
 
 [metadata.files]
 absl-py = [
@@ -1811,7 +1811,7 @@ pytorch-lightning = [
     {file = "pytorch_lightning-1.0.8-py3-none-any.whl", hash = "sha256:fa1922423260da0232315e88b38633703ff4e822fb419ffeaee539ede9dbf56b"},
 ]
 pytorch-ssd = [
-    {file = "pytorch_ssd-1.3.0-py3-none-any.whl", hash = "sha256:0f1619f7f4648cad0aeb92815714995c6de108bff29872a0348ed57d36cbe3dd"},
+    {file = "pytorch_ssd-1.3.1-py3-none-any.whl", hash = "sha256:59a555e2f7cc8c784fe081f54eb1e7fb994d71a0218be2a293bb1a3f4b7f80d4"},
 ]
 pywavelets = [
     {file = "PyWavelets-1.1.1-cp35-cp35m-macosx_10_6_intel.whl", hash = "sha256:35959c041ec014648575085a97b498eafbbaa824f86f6e4a59bfdef8a3fe6308"},

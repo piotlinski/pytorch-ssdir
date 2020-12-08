@@ -17,6 +17,7 @@ from pyro.infer import Trace_ELBO
 from pytorch_ssd.data.datasets import datasets
 from pytorch_ssd.data.transforms import DataTransform, TrainDataTransform
 from pytorch_ssd.modeling.model import SSD
+from pytorch_ssd.modeling.visualize import denormalize
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.utils.data.dataloader import DataLoader
 
@@ -823,11 +824,21 @@ class SSDIR(pl.LightningModule):
         objects: torch.Tensor,
     ) -> Tuple[PILImage.Image, Dict[str, Any]]:
         """Create model inference visualization."""
+        denormalized_image = denormalize(
+            image.permute(1, 2, 0),
+            pixel_mean=self.ssd_backbone.PIXEL_MEANS,
+            pixel_std=self.ssd_backbone.PIXEL_STDS,
+        )
         vis_image = PILImage.fromarray(
-            (image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+            (denormalized_image.cpu().numpy() * 255).astype(np.uint8)
+        )
+        denormalized_reconstruction = denormalize(
+            reconstruction.permute(1, 2, 0),
+            pixel_mean=self.ssd_backbone.PIXEL_MEANS,
+            pixel_std=self.ssd_backbone.PIXEL_STDS,
         )
         vis_reconstruction = PILImage.fromarray(
-            (reconstruction.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+            (denormalized_reconstruction.cpu().numpy() * 255).astype(np.uint8)
         )
         vis_objects = objects[: self.n_visualize_objects].squeeze(1)
         inference_image = PILImage.new(
@@ -842,12 +853,19 @@ class SSDIR(pl.LightningModule):
         )
         inference_image.paste(vis_image, (0, 0))
 
-        output = vis_objects.new_zeros(vis_objects.shape[1:])
+        output = vis_objects.new_zeros(
+            vis_objects.shape[2], vis_objects.shape[3], vis_objects.shape[1]
+        )
         for idx, obj in enumerate(vis_objects):
-            filtered_obj = obj * torch.where(output == 0, 1.0, 0.3)
+            denormalized_obj = denormalize(
+                obj.permute(1, 2, 0),
+                pixel_mean=self.ssd_backbone.PIXEL_MEANS,
+                pixel_std=self.ssd_backbone.PIXEL_STDS,
+            )
+            filtered_obj = denormalized_obj * torch.where(output == 0, 1.0, 0.3)
             output += filtered_obj
             obj_image = PILImage.fromarray(
-                (filtered_obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                (filtered_obj.cpu().numpy() * 255).astype(np.uint8)
             )
             inference_image.paste(
                 obj_image, (vis_image.width + idx * obj_image.width, 0)
