@@ -31,3 +31,14 @@ def test_depth_encoder_dtype():
     assert locs.dtype == torch.float
     assert scales.dtype == torch.float
     assert (scales > 0).all()
+
+
+def test_depth_encoder_constant_scale():
+    """Verify if depth encoder returns constant scale when given."""
+    z_depth_scale_const = 0.1
+    inputs = [torch.rand(3, 4, 5, 5)]
+    encoder = DepthEncoder(
+        feature_channels=[4], z_depth_scale_const=z_depth_scale_const
+    )
+    locs, scales = encoder(inputs)
+    assert torch.all(scales == z_depth_scale_const)
