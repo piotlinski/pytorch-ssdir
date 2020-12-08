@@ -353,10 +353,12 @@ class SSDIR(pl.LightningModule):
         pin_memory: bool = True,
         z_what_size: int = 64,
         z_present_p_prior: float = 0.01,
-        z_where_loc_prior: float = 0.5,
-        z_where_scale_prior: float = 0.25,
-        z_where_scale: float = 0.05,
+        z_where_pos_loc_prior: float = 0.5,
+        z_where_size_loc_prior: float = 0.2,
+        z_where_pos_scale_prior: float = 1.0,
+        z_where_size_scale_prior: float = 0.2,
         drop: bool = True,
+        z_where_scale_const: float = 0.05,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         weighted_merge: bool = False,
@@ -389,10 +391,12 @@ class SSDIR(pl.LightningModule):
         :param pin_memory: pin memory for training
         :param z_what_size: latent what size
         :param z_present_p_prior: present prob prior
-        :param z_where_loc_prior: prior z_where loc
-        :param z_where_scale_prior: prior z_where scale
-        :param z_where_scale: z_where scale used in inference
+        :param z_where_pos_loc_prior: prior z_where loc for bbox position
+        :param z_where_size_loc_prior: prior z_where loc for bbox size
+        :param z_where_pos_scale_prior: prior z_where scale for bbox position
+        :param z_where_size_scale_prior: prior z_where scale for bbox size
         :param drop: drop empty objects' latents
+        :param z_where_scale_const: z_where scale used in inference
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
         :param weighted_merge: merge output images using weighted sum (else: masked)
@@ -452,9 +456,19 @@ class SSDIR(pl.LightningModule):
 
         self.z_what_size = z_what_size
         self.z_present_p_prior = z_present_p_prior
-        self.z_where_loc_prior = z_where_loc_prior
-        self.z_where_scale_prior = z_where_scale_prior
-        self.z_where_scale = z_where_scale
+        self.z_where_loc_prior = [
+            z_where_pos_loc_prior,
+            z_where_pos_loc_prior,
+            z_where_size_loc_prior,
+            z_where_size_loc_prior,
+        ]
+        self.z_where_scale_prior = [
+            z_where_pos_scale_prior,
+            z_where_pos_scale_prior,
+            z_where_size_scale_prior,
+            z_where_size_scale_prior,
+        ]
+        self.z_where_scale_const = z_where_scale_const
         self.drop = drop
 
         self.what_coef = what_coef
@@ -545,25 +559,40 @@ class SSDIR(pl.LightningModule):
             help="z_present probability prior",
         )
         parser.add_argument(
-            "--z-where-loc-prior", type=float, default=0.5, help="prior z_where loc"
+            "--z-where-pos-loc-prior",
+            type=float,
+            default=0.5,
+            help="prior z_where loc for position",
         )
         parser.add_argument(
-            "--z-where-scale-prior",
+            "--z-where-size-loc-prior",
             type=float,
-            default=0.05,
-            help="prior z_where scale",
+            default=0.2,
+            help="prior z_where loc for size",
         )
         parser.add_argument(
-            "--z-where-scale",
+            "--z-where-pos-scale-prior",
             type=float,
-            default=0.05,
-            help="z_where scale used in inference",
+            default=1,
+            help="prior z_where scale for position",
+        )
+        parser.add_argument(
+            "--z-where-size-scale-prior",
+            type=float,
+            default=0.2,
+            help="prior z_where scale for size",
         )
         parser.add_argument(
             "--drop",
             default=True,
             action="store_true",
             help="Drop empty objects' latents",
+        )
+        parser.add_argument(
+            "--z-where-scale-const",
+            type=float,
+            default=0.05,
+            help="z_where scale used in inference",
         )
         parser.add_argument("--no-drop", dest="drop", action="store_false")
         parser.add_argument(
@@ -752,11 +781,11 @@ class SSDIR(pl.LightningModule):
             z_what_loc = x.new_zeros(batch_size, self.n_objects + 1, self.z_what_size)
             z_what_scale = torch.ones_like(z_what_loc)
 
-            z_where_loc = x.new_full(
-                (batch_size, self.n_ssd_features, 4), fill_value=self.z_where_loc_prior
+            z_where_loc = x.new_tensor(self.z_where_loc_prior).expand(
+                (batch_size, self.n_ssd_features, 4)
             )
-            z_where_scale = torch.full_like(
-                z_where_loc, fill_value=self.z_where_scale_prior
+            z_where_scale = x.new_tensor(self.z_where_scale_prior).expand(
+                (batch_size, self.n_ssd_features, 4)
             )
 
             z_present_p = x.new_full(
@@ -812,7 +841,9 @@ class SSDIR(pl.LightningModule):
                 z_present_p,
                 (z_depth_loc, z_depth_scale),
             ) = self.encoder(x)
-            z_where_scale = torch.full_like(z_where_loc, fill_value=self.z_where_scale)
+            z_where_scale = torch.full_like(
+                z_where_loc, fill_value=self.z_where_scale_const
+            )
 
             with poutine.scale(scale=self.what_coef):
                 pyro.sample("z_what", dist.Normal(z_what_loc, z_what_scale).to_event(2))
