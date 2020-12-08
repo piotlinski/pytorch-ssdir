@@ -1,4 +1,5 @@
 """$$z_{depth}$$ encoder"""
+from itertools import chain
 from typing import List, Tuple
 
 import torch
@@ -13,6 +14,7 @@ class DepthEncoder(nn.Module):
         self.feature_channels = feature_channels
         self.loc_encoders = self._build_depth_encoders()
         self.scale_encoders = self._build_depth_encoders()
+        self.init_encoders()
 
     def _build_depth_encoders(self) -> nn.ModuleList:
         """Build conv layers list for encoding backbone output."""
@@ -58,3 +60,10 @@ class DepthEncoder(nn.Module):
         scales = torch.cat(scales, dim=1)
 
         return locs, scales
+
+    def init_encoders(self):
+        """Initialize model params."""
+        for module in chain(self.loc_encoders.modules(), self.scale_encoders.modules()):
+            if isinstance(module, nn.Conv2d):
+                nn.init.xavier_uniform_(module.weight)
+                nn.init.zeros_(module.bias)

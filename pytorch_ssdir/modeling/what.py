@@ -1,4 +1,5 @@
 """$$z_{what}$$ encoder and decoder."""
+from itertools import chain
 from typing import List, Tuple
 
 import torch
@@ -19,6 +20,7 @@ class WhatEncoder(nn.Module):
         self.scale_encoders = self._build_what_encoders()
         self.bg_loc_encoder = self._build_what_bg_encoder()
         self.bg_scale_encoder = self._build_what_bg_encoder()
+        self.init_encoders()
 
     def _build_what_encoders(self) -> nn.ModuleList:
         """Build conv layers list for encoding backbone output."""
@@ -90,6 +92,18 @@ class WhatEncoder(nn.Module):
         scales = torch.cat(scales, dim=1)
 
         return locs, scales
+
+    def init_encoders(self):
+        """Initialize model params."""
+        for module in chain(
+            self.loc_encoders.modules(),
+            self.scale_encoders.modules(),
+            self.bg_loc_encoder.modules(),
+            self.bg_scale_encoder.modules(),
+        ):
+            if isinstance(module, nn.Conv2d):
+                nn.init.xavier_uniform_(module.weight)
+                nn.init.zeros_(module.bias)
 
 
 class WhatDecoder(nn.Module):
