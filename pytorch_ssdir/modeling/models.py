@@ -126,6 +126,8 @@ class Decoder(nn.Module):
         self.drop = drop_empty
         self.weighted = weighted_merge
         self.empty_obj_const = nn.Parameter(torch.tensor(-1000.0), requires_grad=False)
+        self.pixel_means = ssd.backbone.PIXEL_MEANS
+        self.pixel_stds = ssd.backbone.PIXEL_STDS
         self.bg_where = nn.Parameter(
             torch.tensor([0.5, 0.5, 1.0, 1.0]), requires_grad=False
         )
@@ -766,7 +768,15 @@ class SSDIR(pl.LightningModule):
             output = self.decoder((z_what, z_where, z_present, z_depth))
 
             with poutine.scale(scale=self.rec_coef):
-                pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=x)
+                pyro.sample(
+                    "obs",
+                    dist.Bernoulli(output.permute(0, 2, 3, 1)).to_event(3),
+                    obs=denormalize(
+                        x.permute(0, 2, 3, 1),
+                        pixel_mean=self.pixel_means,
+                        pixel_std=self.pixel_stds,
+                    ),
+                )
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
@@ -834,13 +844,8 @@ class SSDIR(pl.LightningModule):
         vis_image = PILImage.fromarray(
             (denormalized_image.cpu().numpy() * 255).astype(np.uint8)
         )
-        denormalized_reconstruction = denormalize(
-            reconstruction.permute(1, 2, 0),
-            pixel_mean=self.pixel_means,
-            pixel_std=self.pixel_stds,
-        )
         vis_reconstruction = PILImage.fromarray(
-            (denormalized_reconstruction.cpu().numpy() * 255).astype(np.uint8)
+            (reconstruction.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
         )
         vis_objects = objects[: self.n_visualize_objects].squeeze(1)
         inference_image = PILImage.new(
@@ -855,19 +860,12 @@ class SSDIR(pl.LightningModule):
         )
         inference_image.paste(vis_image, (0, 0))
 
-        output = vis_objects.new_zeros(
-            vis_objects.shape[2], vis_objects.shape[3], vis_objects.shape[1]
-        )
+        output = vis_objects.new_zeros(vis_objects.shape[1:])
         for idx, obj in enumerate(vis_objects):
-            denormalized_obj = denormalize(
-                obj.permute(1, 2, 0),
-                pixel_mean=self.pixel_means,
-                pixel_std=self.pixel_stds,
-            )
-            filtered_obj = denormalized_obj * torch.where(output == 0, 1.0, 0.3)
+            filtered_obj = obj * torch.where(output == 0, 1.0, 0.3)
             output += filtered_obj
             obj_image = PILImage.fromarray(
-                (filtered_obj.cpu().numpy() * 255).astype(np.uint8)
+                (filtered_obj.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
             )
             inference_image.paste(
                 obj_image, (vis_image.width + idx * obj_image.width, 0)
