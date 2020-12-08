@@ -429,6 +429,8 @@ class SSDIR(pl.LightningModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
+        self.pixel_means = ssd_model.backbone.PIXEL_MEANS
+        self.pixel_stds = ssd_model.backbone.PIXEL_STDS
 
         self.image_size = ssd_model.image_size
         self.flip_train = ssd_model.flip_train
@@ -826,16 +828,16 @@ class SSDIR(pl.LightningModule):
         """Create model inference visualization."""
         denormalized_image = denormalize(
             image.permute(1, 2, 0),
-            pixel_mean=self.ssd_backbone.PIXEL_MEANS,
-            pixel_std=self.ssd_backbone.PIXEL_STDS,
+            pixel_mean=self.pixel_means,
+            pixel_std=self.pixel_stds,
         )
         vis_image = PILImage.fromarray(
             (denormalized_image.cpu().numpy() * 255).astype(np.uint8)
         )
         denormalized_reconstruction = denormalize(
             reconstruction.permute(1, 2, 0),
-            pixel_mean=self.ssd_backbone.PIXEL_MEANS,
-            pixel_std=self.ssd_backbone.PIXEL_STDS,
+            pixel_mean=self.pixel_means,
+            pixel_std=self.pixel_stds,
         )
         vis_reconstruction = PILImage.fromarray(
             (denormalized_reconstruction.cpu().numpy() * 255).astype(np.uint8)
@@ -859,8 +861,8 @@ class SSDIR(pl.LightningModule):
         for idx, obj in enumerate(vis_objects):
             denormalized_obj = denormalize(
                 obj.permute(1, 2, 0),
-                pixel_mean=self.ssd_backbone.PIXEL_MEANS,
-                pixel_std=self.ssd_backbone.PIXEL_STDS,
+                pixel_mean=self.pixel_means,
+                pixel_std=self.pixel_stds,
             )
             filtered_obj = denormalized_obj * torch.where(output == 0, 1.0, 0.3)
             output += filtered_obj
@@ -1056,8 +1058,8 @@ class SSDIR(pl.LightningModule):
         """Prepare train dataloader."""
         data_transform = TrainDataTransform(
             image_size=self.image_size,
-            pixel_mean=self.ssd_backbone.PIXEL_MEANS,
-            pixel_std=self.ssd_backbone.PIXEL_STDS,
+            pixel_mean=self.pixel_means,
+            pixel_std=self.pixel_stds,
             flip=self.flip_train,
             augment_colors=self.augment_colors_train,
         )
@@ -1079,8 +1081,8 @@ class SSDIR(pl.LightningModule):
         """Prepare validation dataloader."""
         data_transform = DataTransform(
             image_size=self.image_size,
-            pixel_mean=self.ssd_backbone.PIXEL_MEANS,
-            pixel_std=self.ssd_backbone.PIXEL_STDS,
+            pixel_mean=self.pixel_means,
+            pixel_std=self.pixel_stds,
         )
         dataset = self.dataset(
             self.data_dir,
