@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as functional
 
 
 class WhatEncoder(nn.Module):
@@ -69,7 +70,7 @@ class WhatEncoder(nn.Module):
                 .view(batch_size, -1, self.h_size)
             )
             scales.append(
-                torch.exp(scale_enc(feature))
+                functional.softplus(scale_enc(feature))
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, self.h_size)
@@ -82,7 +83,7 @@ class WhatEncoder(nn.Module):
             .view(batch_size, -1, self.h_size)
         )
         scales.append(
-            torch.exp(self.bg_scale_encoder(features[bg_feature_idx]))
+            functional.softplus(self.bg_scale_encoder(features[bg_feature_idx]))
             .permute(0, 2, 3, 1)
             .contiguous()
             .view(batch_size, -1, self.h_size)
