@@ -12,7 +12,6 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-import wandb
 from pyro.infer import Trace_ELBO
 from pytorch_ssd.data.datasets import datasets
 from pytorch_ssd.data.transforms import DataTransform, TrainDataTransform
@@ -21,6 +20,7 @@ from pytorch_ssd.modeling.visualize import denormalize
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.utils.data.dataloader import DataLoader
 
+import wandb
 from pytorch_ssdir.modeling.depth import DepthEncoder
 from pytorch_ssdir.modeling.present import PresentEncoder
 from pytorch_ssdir.modeling.what import WhatDecoder, WhatEncoder
@@ -573,7 +573,7 @@ class SSDIR(pl.LightningModule):
         parser.add_argument(
             "--z-where-pos-scale-prior",
             type=float,
-            default=1,
+            default=1.0,
             help="prior z_where scale for position",
         )
         parser.add_argument(
