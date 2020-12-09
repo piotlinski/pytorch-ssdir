@@ -9,6 +9,7 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
 )
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_ssd.args import str2bool
 from pytorch_ssd.modeling.model import SSD
 
 from pytorch_ssdir.modeling import SSDIR
@@ -68,29 +69,28 @@ def cli():
     )
     parser.add_argument(
         "-c",
-        "--ssdir-checkpoint",
+        "--ssdir_checkpoint",
         type=str,
         default=None,
         help="Checkpoint to start training from",
     )
     parser.add_argument(
-        "--ssd-checkpoint", type=str, default=None, help="SSD checkpoint file"
+        "--ssd_checkpoint", type=str, default=None, help="SSD checkpoint file"
     )
     parser = SSDIR.add_model_specific_args(parser)
     parser.add_argument(
-        "--n-checkpoints", type=int, default=3, help="Number of top checkpoints to save"
+        "--n_checkpoints", type=int, default=3, help="Number of top checkpoints to save"
     )
     parser.add_argument(
-        "--early-stopping",
+        "--early_stopping",
+        type=str2bool,
+        nargs="?",
+        const=True,
         default=True,
-        action="store_true",
         help="Enable early stopping",
     )
     parser.add_argument(
-        "--no-early-stopping", dest="early_stopping", action="store_false"
-    )
-    parser.add_argument(
-        "--early-stopping-patience",
+        "--early_stopping_patience",
         type=int,
         default=5,
         help="Number of epochs with no improvements before stopping early",
@@ -103,7 +103,7 @@ def cli():
         "Available options: None, gradients, parameters, all",
     )
     parser.add_argument(
-        "--watch-freq",
+        "--watch_freq",
         type=int,
         default=100,
         help="How often to perform model watch.",
