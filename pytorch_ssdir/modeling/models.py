@@ -14,6 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as functional
 import wandb
 from pyro.infer import Trace_ELBO
+from pytorch_ssd.args import str2bool
 from pytorch_ssd.data.datasets import datasets
 from pytorch_ssd.data.transforms import DataTransform, TrainDataTransform
 from pytorch_ssd.modeling.model import SSD
@@ -587,247 +588,241 @@ class SSDIR(pl.LightningModule):
         """Add SSDIR args to parent argument parser."""
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
         parser.add_argument(
-            "--dataset-name",
+            "--dataset_name",
             type=str,
             default="MNIST",
             help=f"Used dataset name. Available: {list(datasets.keys())}",
         )
         parser.add_argument(
-            "--data-dir", type=str, default="data", help="Dataset files directory"
+            "--data_dir", type=str, default="data", help="Dataset files directory"
         )
         parser.add_argument(
-            "--learning-rate",
+            "--learning_rate",
             type=float,
             default=1e-3,
             help="Learning rate used for training the model",
         )
         parser.add_argument(
-            "--ssd-lr-multiplier",
+            "--ssd_lr_multiplier",
             type=float,
             default=1.0,
             help="Learning rate multiplier for training SSD backbone",
         )
         parser.add_argument(
-            "--warm-restart-epochs",
+            "--warm_restart_epochs",
             type=float,
             default=1 / 3,
             help="Number of epochs after which a warm restart is performed",
         )
         parser.add_argument(
-            "--warm-restart-len-mult",
+            "--warm_restart_len_mult",
             type=int,
             default=2,
             help="Coef to multiply warm restart epochs after each restart",
         )
         parser.add_argument(
-            "--batch-size",
+            "--batch_size",
             type=int,
             default=32,
             help="Mini-batch size used for training the model",
         )
         parser.add_argument(
-            "--num-workers",
+            "--num_workers",
             type=int,
             default=8,
             help="Number of workers used to load the dataset",
         )
         parser.add_argument(
-            "--pin-memory",
+            "--pin_memory",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=True,
-            action="store_true",
             help="Pin data in memory while training",
         )
-        parser.add_argument("--no-pin-memory", dest="pin_memory", action="store_false")
         parser.add_argument(
-            "--z-what-size", type=int, default=64, help="z_what latent size"
+            "--z_what_size", type=int, default=64, help="z_what latent size"
         )
         parser.add_argument(
-            "--z-present-p-prior",
+            "--z_present_p_prior",
             type=float,
             default=0.01,
             help="z_present probability prior",
         )
         parser.add_argument(
-            "--z-where-pos-loc-prior",
+            "--z_where_pos_loc_prior",
             type=float,
             default=0.5,
             help="prior z_where loc for position",
         )
         parser.add_argument(
-            "--z-where-size-loc-prior",
+            "--z_where_size_loc_prior",
             type=float,
             default=0.2,
             help="prior z_where loc for size",
         )
         parser.add_argument(
-            "--z-where-pos-scale-prior",
+            "--z_where_pos_scale_prior",
             type=float,
             default=1.0,
             help="prior z_where scale for position",
         )
         parser.add_argument(
-            "--z-where-size-scale-prior",
+            "--z_where_size_scale_prior",
             type=float,
             default=0.2,
             help="prior z_where scale for size",
         )
         parser.add_argument(
             "--drop",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=True,
-            action="store_true",
             help="Drop empty objects' latents",
         )
         parser.add_argument(
-            "--z-where-scale-const",
+            "--z_where_scale_const",
             type=float,
             default=0.05,
             help="z_where scale used in inference",
         )
-        parser.add_argument("--no-drop", dest="drop", action="store_false")
         parser.add_argument(
-            "--z-what-scale-const",
+            "--z_what_scale_const",
             type=float,
             default=None,
             help="constant z_what scale",
         )
         parser.add_argument(
-            "--z-depth-scale-const",
+            "--z_depth_scale_const",
             type=float,
             default=None,
             help="constant z_depth scale",
         )
         parser.add_argument(
-            "--weighted-merge",
+            "--weighted_merge",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=False,
-            action="store_true",
             help="Use weighted output merging method",
         )
         parser.add_argument(
-            "--masked-merge", dest="weighted_merge", action="store_false"
-        )
-        parser.add_argument(
-            "--what-coef",
+            "--what_coef",
             type=float,
             default=1.0,
             help="z_what loss component coefficient",
         )
         parser.add_argument(
-            "--where-coef",
+            "--where_coef",
             type=float,
             default=1.0,
             help="z_where loss component coefficient",
         )
         parser.add_argument(
-            "--present-coef",
+            "--present_coef",
             type=float,
             default=1.0,
             help="z_present loss component coefficient",
         )
         parser.add_argument(
-            "--depth-coef",
+            "--depth_coef",
             type=float,
             default=1.0,
             help="z_depth loss component coefficient",
         )
         parser.add_argument(
-            "--rec-coef",
+            "--rec_coef",
             type=float,
             default=1.0,
             help="Reconstruction error component coefficient",
         )
         parser.add_argument(
-            "--train-what",
+            "--train_what",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=True,
-            action="store_true",
             help="Train what encoder and decoder",
         )
-        parser.add_argument("--no-train-what", dest="train_what", action="store_false")
         parser.add_argument(
-            "--train-where",
+            "--train_where",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=True,
-            action="store_true",
             help="Train where encoder",
         )
         parser.add_argument(
-            "--no-train-where", dest="train_where", action="store_false"
-        )
-        parser.add_argument(
-            "--train-present",
+            "--train_present",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=True,
-            action="store_true",
             help="Train present encoder",
         )
         parser.add_argument(
-            "--no-train-present", dest="train_present", action="store_false"
-        )
-        parser.add_argument(
-            "--train-depth",
+            "--train_depth",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=True,
-            action="store_true",
             help="Train depth encoder",
         )
         parser.add_argument(
-            "--no-train-depth", dest="train_depth", action="store_false"
-        )
-        parser.add_argument(
-            "--train-backbone",
+            "--train_backbone",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=True,
-            action="store_true",
             help="Train SSD backbone",
         )
         parser.add_argument(
-            "--no-train-backbone", dest="train_backbone", action="store_false"
-        )
-        parser.add_argument(
-            "--flip-train",
+            "--flip_train",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=False,
-            action="store_true",
             help="Flip train images during training",
         )
-        parser.add_argument("--no-flip-train", dest="flip_train", action="store_false")
         parser.add_argument(
-            "--augment-colors-train",
+            "--augment_colors_train",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=False,
-            action="store_true",
             help="Perform random colors augmentation during training",
         )
         parser.add_argument(
-            "--no-augment-colors-train",
-            dest="augment_colors_train",
-            action="store_false",
-        )
-        parser.add_argument(
-            "--visualize-inference",
+            "--visualize_inference",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=True,
-            action="store_true",
             help="Log visualizations of model predictions",
         )
         parser.add_argument(
-            "--no-visualize-inference", dest="visualize_inference", action="store_false"
-        )
-        parser.add_argument(
-            "--visualize-inference-freq",
+            "--visualize_inference_freq",
             type=int,
             default=500,
             help="How often to perform inference visualization.",
         )
         parser.add_argument(
-            "--n-visualize-objects",
+            "--n_visualize_objects",
             type=int,
             default=5,
             help="Number of objects to visualize",
         )
         parser.add_argument(
-            "--visualize-latents",
+            "--visualize_latents",
+            type=str2bool,
+            nargs="?",
+            const=True,
             default=True,
-            action="store_true",
             help="Log visualizations of model latents",
         )
         parser.add_argument(
-            "--no-visualize-latents", dest="visualize_latents", action="store_false"
-        )
-        parser.add_argument(
-            "--visualize-latents-freq",
+            "--visualize_latents_freq",
             type=int,
             default=10,
             help="How often to perform latents visualization.",
