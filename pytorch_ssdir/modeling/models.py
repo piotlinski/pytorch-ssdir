@@ -455,6 +455,7 @@ class SSDIR(pl.LightningModule):
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         weighted_merge: bool = False,
+        normalize_elbo: bool = False,
         what_coef: float = 1.0,
         where_coef: float = 1.0,
         present_coef: float = 1.0,
@@ -493,6 +494,7 @@ class SSDIR(pl.LightningModule):
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
         :param weighted_merge: merge output images using weighted sum (else: masked)
+        :param normalize_elbo: normalize elbo components by tenors' numels
         :param what_coef: z_what loss component coefficient
         :param where_coef: z_where loss component coefficient
         :param present_coef: z_present loss component coefficient
@@ -564,11 +566,12 @@ class SSDIR(pl.LightningModule):
         self.z_where_scale_const = z_where_scale_const
         self.drop = drop
 
-        self.what_coef = what_coef
-        self.where_coef = where_coef
-        self.present_coef = present_coef
-        self.depth_coef = depth_coef
-        self.rec_coef = rec_coef
+        self.normalize_elbo = normalize_elbo
+        self._what_coef = what_coef
+        self._where_coef = where_coef
+        self._present_coef = present_coef
+        self._depth_coef = depth_coef
+        self._rec_coef = rec_coef
 
         self.visualize_inference = visualize_inference
         self.visualize_inference_freq = visualize_inference_freq
@@ -706,6 +709,14 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=False,
             help="Use weighted output merging method",
+        )
+        parser.add_argument(
+            "--normalize_elbo",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Normalize elbo components by tenors' numels",
         )
         parser.add_argument(
             "--what_coef",
@@ -855,6 +866,46 @@ class SSDIR(pl.LightningModule):
         """Pass data through the model."""
         latents = self.encoder_forward(images)
         return self.decoder_forward(latents)
+
+    @property
+    def what_coef(self) -> float:
+        """Calculate what sampling elbo coefficient."""
+        coef = self._what_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * (self.n_ssd_features + 1) * self.z_what_size
+        return coef
+
+    @property
+    def where_coef(self) -> float:
+        """Calculate where sampling elbo coefficient."""
+        coef = self._where_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * (self.n_ssd_features + 1) * 4
+        return coef
+
+    @property
+    def present_coef(self) -> float:
+        """Calculate what sampling elbo coefficient."""
+        coef = self._present_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * (self.n_ssd_features + 1)
+        return coef
+
+    @property
+    def depth_coef(self) -> float:
+        """Calculate what sampling elbo coefficient."""
+        coef = self._depth_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * (self.n_ssd_features + 1)
+        return coef
+
+    @property
+    def rec_coef(self) -> float:
+        """Calculate what sampling elbo coefficient."""
+        coef = self._rec_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * 3 * self.image_size[0] * self.image_size[1]
+        return coef
 
     def model(self, x: torch.Tensor):
         """Pyro model; $$P(x|z)P(z)$$."""
