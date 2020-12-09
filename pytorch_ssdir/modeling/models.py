@@ -542,6 +542,10 @@ class SSDIR(pl.LightningModule):
         self.pin_memory = pin_memory
         self.pixel_means = ssd_model.backbone.PIXEL_MEANS
         self.pixel_stds = ssd_model.backbone.PIXEL_STDS
+        self.mse = {
+            "train": pl.metrics.MeanSquaredError(),
+            "val": pl.metrics.MeanSquaredError(),
+        }
 
         self.image_size = ssd_model.image_size
         self.flip_train = ssd_model.flip_train
@@ -1154,48 +1158,62 @@ class SSDIR(pl.LightningModule):
                     {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
-        if self.visualize_inference and (
-            self.global_step % self.visualize_inference_freq == 0 or batch_nb == 0
+
+        if (
+            self.global_step % self.visualize_inference_freq == 0
+            or self.global_step % self.trainer.log_every_n_steps == 0
+            or batch_nb == 0
         ):
             with torch.no_grad():
                 latents = self.encoder_forward(vis_images)
                 reconstructions = self.decoder_forward(latents)
-                z_what, z_where, z_present, z_depth = latents
-                objects, depths = self.decoder.reconstruct_objects(
-                    z_what[0].unsqueeze(0),
-                    z_where[0].unsqueeze(0),
-                    z_present[0].unsqueeze(0),
-                    z_depth[0].unsqueeze(0),
+                self.mse[stage](
+                    reconstructions.permute(0, 2, 3, 1),
+                    denormalize(
+                        vis_images.permute(0, 2, 3, 1),
+                        pixel_mean=self.pixel_means,
+                        pixel_std=self.pixel_stds,
+                    ),
                 )
-                _, sort_index = torch.sort(depths, dim=1, descending=True)
-                sorted_objects = objects.gather(
-                    dim=1,
-                    index=sort_index.view(1, -1, 1, 1, 1).expand_as(objects),
-                )
-                filtered_z_where = z_where[0][
-                    (z_present[0] == 1).expand_as(z_where[0])
-                ].view(-1, z_where.shape[-1])
+                self.logger.experiment.log({f"{stage}_mse": self.mse[stage]})
 
-            (
-                inference_image,
-                wandb_inference_boxes,
-            ) = self.get_inference_visualization(
-                image=vis_images[0],
-                boxes=vis_boxes[0],
-                reconstruction=reconstructions[0],
-                z_where=filtered_z_where,
-                objects=sorted_objects[0],
-            )
-            self.logger.experiment.log(
-                {
-                    f"{stage}_inference_image": wandb.Image(
-                        inference_image,
-                        boxes=wandb_inference_boxes,
-                        caption="model inference",
+                if self.visualize_latents:
+                    z_what, z_where, z_present, z_depth = latents
+                    objects, depths = self.decoder.reconstruct_objects(
+                        z_what[0].unsqueeze(0),
+                        z_where[0].unsqueeze(0),
+                        z_present[0].unsqueeze(0),
+                        z_depth[0].unsqueeze(0),
                     )
-                },
-                step=self.global_step,
-            )
+                    _, sort_index = torch.sort(depths, dim=1, descending=True)
+                    sorted_objects = objects.gather(
+                        dim=1,
+                        index=sort_index.view(1, -1, 1, 1, 1).expand_as(objects),
+                    )
+                    filtered_z_where = z_where[0][
+                        (z_present[0] == 1).expand_as(z_where[0])
+                    ].view(-1, z_where.shape[-1])
+
+                    (
+                        inference_image,
+                        wandb_inference_boxes,
+                    ) = self.get_inference_visualization(
+                        image=vis_images[0],
+                        boxes=vis_boxes[0],
+                        reconstruction=reconstructions[0],
+                        z_where=filtered_z_where,
+                        objects=sorted_objects[0],
+                    )
+                    self.logger.experiment.log(
+                        {
+                            f"{stage}_inference_image": wandb.Image(
+                                inference_image,
+                                boxes=wandb_inference_boxes,
+                                caption="model inference",
+                            )
+                        },
+                        step=self.global_step,
+                    )
 
         return loss
 
