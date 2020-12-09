@@ -49,7 +49,7 @@ def main(hparams):
         name=(
             f"{hparams.dataset_name}-"
             f"SSDIR-{model.encoder.ssd_backbone.__class__.__name__}-"
-            f"bs{hparams.batch_size}-lr{hparams.learning_rate}"
+            f"seed{hparams.seed}"
         ),
         save_dir=hparams.default_root_dir,
         project="ssdir",

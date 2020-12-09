@@ -455,6 +455,7 @@ class SSDIR(pl.LightningModule):
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         weighted_merge: bool = False,
+        normalize_elbo: bool = False,
         what_coef: float = 1.0,
         where_coef: float = 1.0,
         present_coef: float = 1.0,
@@ -493,6 +494,7 @@ class SSDIR(pl.LightningModule):
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
         :param weighted_merge: merge output images using weighted sum (else: masked)
+        :param normalize_elbo: normalize elbo components by tenors' numels
         :param what_coef: z_what loss component coefficient
         :param where_coef: z_where loss component coefficient
         :param present_coef: z_present loss component coefficient
@@ -540,6 +542,10 @@ class SSDIR(pl.LightningModule):
         self.pin_memory = pin_memory
         self.pixel_means = ssd_model.backbone.PIXEL_MEANS
         self.pixel_stds = ssd_model.backbone.PIXEL_STDS
+        self.mse = {
+            "train": pl.metrics.MeanSquaredError(),
+            "val": pl.metrics.MeanSquaredError(),
+        }
 
         self.image_size = ssd_model.image_size
         self.flip_train = ssd_model.flip_train
@@ -564,11 +570,12 @@ class SSDIR(pl.LightningModule):
         self.z_where_scale_const = z_where_scale_const
         self.drop = drop
 
-        self.what_coef = what_coef
-        self.where_coef = where_coef
-        self.present_coef = present_coef
-        self.depth_coef = depth_coef
-        self.rec_coef = rec_coef
+        self.normalize_elbo = normalize_elbo
+        self._what_coef = what_coef
+        self._where_coef = where_coef
+        self._present_coef = present_coef
+        self._depth_coef = depth_coef
+        self._rec_coef = rec_coef
 
         self.visualize_inference = visualize_inference
         self.visualize_inference_freq = visualize_inference_freq
@@ -706,6 +713,14 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=False,
             help="Use weighted output merging method",
+        )
+        parser.add_argument(
+            "--normalize_elbo",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Normalize elbo components by tenors' numels",
         )
         parser.add_argument(
             "--what_coef",
@@ -855,6 +870,46 @@ class SSDIR(pl.LightningModule):
         """Pass data through the model."""
         latents = self.encoder_forward(images)
         return self.decoder_forward(latents)
+
+    @property
+    def what_coef(self) -> float:
+        """Calculate what sampling elbo coefficient."""
+        coef = self._what_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * (self.n_ssd_features + 1) * self.z_what_size
+        return coef
+
+    @property
+    def where_coef(self) -> float:
+        """Calculate where sampling elbo coefficient."""
+        coef = self._where_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * (self.n_ssd_features + 1) * 4
+        return coef
+
+    @property
+    def present_coef(self) -> float:
+        """Calculate what sampling elbo coefficient."""
+        coef = self._present_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * (self.n_ssd_features + 1)
+        return coef
+
+    @property
+    def depth_coef(self) -> float:
+        """Calculate what sampling elbo coefficient."""
+        coef = self._depth_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * (self.n_ssd_features + 1)
+        return coef
+
+    @property
+    def rec_coef(self) -> float:
+        """Calculate what sampling elbo coefficient."""
+        coef = self._rec_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * 3 * self.image_size[0] * self.image_size[1]
+        return coef
 
     def model(self, x: torch.Tensor):
         """Pyro model; $$P(x|z)P(z)$$."""
@@ -1103,48 +1158,62 @@ class SSDIR(pl.LightningModule):
                     {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
-        if self.visualize_inference and (
-            self.global_step % self.visualize_inference_freq == 0 or batch_nb == 0
+
+        if (
+            self.global_step % self.visualize_inference_freq == 0
+            or self.global_step % self.trainer.log_every_n_steps == 0
+            or batch_nb == 0
         ):
             with torch.no_grad():
                 latents = self.encoder_forward(vis_images)
                 reconstructions = self.decoder_forward(latents)
-                z_what, z_where, z_present, z_depth = latents
-                objects, depths = self.decoder.reconstruct_objects(
-                    z_what[0].unsqueeze(0),
-                    z_where[0].unsqueeze(0),
-                    z_present[0].unsqueeze(0),
-                    z_depth[0].unsqueeze(0),
+                self.mse[stage](
+                    reconstructions.permute(0, 2, 3, 1),
+                    denormalize(
+                        vis_images.permute(0, 2, 3, 1),
+                        pixel_mean=self.pixel_means,
+                        pixel_std=self.pixel_stds,
+                    ),
                 )
-                _, sort_index = torch.sort(depths, dim=1, descending=True)
-                sorted_objects = objects.gather(
-                    dim=1,
-                    index=sort_index.view(1, -1, 1, 1, 1).expand_as(objects),
-                )
-                filtered_z_where = z_where[0][
-                    (z_present[0] == 1).expand_as(z_where[0])
-                ].view(-1, z_where.shape[-1])
+                self.logger.experiment.log({f"{stage}_mse": self.mse[stage]})
 
-            (
-                inference_image,
-                wandb_inference_boxes,
-            ) = self.get_inference_visualization(
-                image=vis_images[0],
-                boxes=vis_boxes[0],
-                reconstruction=reconstructions[0],
-                z_where=filtered_z_where,
-                objects=sorted_objects[0],
-            )
-            self.logger.experiment.log(
-                {
-                    f"{stage}_inference_image": wandb.Image(
-                        inference_image,
-                        boxes=wandb_inference_boxes,
-                        caption="model inference",
+                if self.visualize_latents:
+                    z_what, z_where, z_present, z_depth = latents
+                    objects, depths = self.decoder.reconstruct_objects(
+                        z_what[0].unsqueeze(0),
+                        z_where[0].unsqueeze(0),
+                        z_present[0].unsqueeze(0),
+                        z_depth[0].unsqueeze(0),
                     )
-                },
-                step=self.global_step,
-            )
+                    _, sort_index = torch.sort(depths, dim=1, descending=True)
+                    sorted_objects = objects.gather(
+                        dim=1,
+                        index=sort_index.view(1, -1, 1, 1, 1).expand_as(objects),
+                    )
+                    filtered_z_where = z_where[0][
+                        (z_present[0] == 1).expand_as(z_where[0])
+                    ].view(-1, z_where.shape[-1])
+
+                    (
+                        inference_image,
+                        wandb_inference_boxes,
+                    ) = self.get_inference_visualization(
+                        image=vis_images[0],
+                        boxes=vis_boxes[0],
+                        reconstruction=reconstructions[0],
+                        z_where=filtered_z_where,
+                        objects=sorted_objects[0],
+                    )
+                    self.logger.experiment.log(
+                        {
+                            f"{stage}_inference_image": wandb.Image(
+                                inference_image,
+                                boxes=wandb_inference_boxes,
+                                caption="model inference",
+                            )
+                        },
+                        step=self.global_step,
+                    )
 
         return loss
 
