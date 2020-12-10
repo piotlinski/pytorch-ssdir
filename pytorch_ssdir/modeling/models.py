@@ -1130,10 +1130,10 @@ class SSDIR(pl.LightningModule):
         self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
         coefs = {
             "obs": self.rec_coef,
-            "what": self.what_coef,
-            "where": self.where_coef,
-            "present": self.present_coef,
-            "depth": self.depth_coef,
+            "z_what": self.what_coef,
+            "z_where": self.where_coef,
+            "z_present": self.present_coef,
+            "z_depth": self.depth_coef,
         }
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
             self.log(
