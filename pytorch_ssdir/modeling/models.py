@@ -1174,7 +1174,10 @@ class SSDIR(pl.LightningModule):
                         pixel_std=self.pixel_stds,
                     ),
                 )
-                self.logger.experiment.log({f"{stage}_mse": self.mse[stage]})
+                self.logger.experiment.log(
+                    {f"{stage}_mse": self.mse[stage]},
+                    step=self.global_step,
+                )
 
                 if self.visualize_latents:
                     z_what, z_where, z_present, z_depth = latents

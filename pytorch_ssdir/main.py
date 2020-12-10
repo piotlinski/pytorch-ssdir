@@ -27,7 +27,9 @@ def main(hparams):
     else:
         ssd = SSD(**kwargs)
     if hparams.ssdir_checkpoint is not None:
-        model = SSDIR.load_from_checkpoint(checkpoint_path=hparams.ssdir_checkpoint, ssd_model=ssd, **kwargs)
+        model = SSDIR.load_from_checkpoint(
+            checkpoint_path=hparams.ssdir_checkpoint, ssd_model=ssd, **kwargs
+        )
     else:
         model = SSDIR(ssd_model=ssd, **kwargs)
 
