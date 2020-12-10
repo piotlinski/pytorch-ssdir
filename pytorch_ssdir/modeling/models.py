@@ -1177,16 +1177,18 @@ class SSDIR(pl.LightningModule):
             with torch.no_grad():
                 latents = self.encoder_forward(vis_images)
                 reconstructions = self.decoder_forward(latents)
-                self.mse[stage](
-                    reconstructions.permute(0, 2, 3, 1),
-                    denormalize(
-                        vis_images.permute(0, 2, 3, 1),
-                        pixel_mean=self.pixel_means,
-                        pixel_std=self.pixel_stds,
-                    ),
-                )
+
                 self.logger.experiment.log(
-                    {f"{stage}_mse": self.mse[stage]},
+                    {
+                        f"{stage}_mse": self.mse[stage](
+                            reconstructions.permute(0, 2, 3, 1),
+                            denormalize(
+                                vis_images.permute(0, 2, 3, 1),
+                                pixel_mean=self.pixel_means,
+                                pixel_std=self.pixel_stds,
+                            ),
+                        )
+                    },
                     step=self.global_step,
                 )
 
