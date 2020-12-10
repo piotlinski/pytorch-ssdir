@@ -542,10 +542,9 @@ class SSDIR(pl.LightningModule):
         self.pin_memory = pin_memory
         self.pixel_means = ssd_model.backbone.PIXEL_MEANS
         self.pixel_stds = ssd_model.backbone.PIXEL_STDS
-        self.mse = {
-            "train": pl.metrics.MeanSquaredError(),
-            "val": pl.metrics.MeanSquaredError(),
-        }
+        self._mse_train = pl.metrics.MeanSquaredError()
+        self._mse_val = pl.metrics.MeanSquaredError()
+        self.mse = {"train": self._mse_train, "val": self._mse_val}
 
         self.image_size = ssd_model.image_size
         self.flip_train = ssd_model.flip_train
