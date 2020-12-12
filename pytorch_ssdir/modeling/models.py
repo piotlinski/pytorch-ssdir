@@ -542,10 +542,9 @@ class SSDIR(pl.LightningModule):
         self.pin_memory = pin_memory
         self.pixel_means = ssd_model.backbone.PIXEL_MEANS
         self.pixel_stds = ssd_model.backbone.PIXEL_STDS
-        self.mse = {
-            "train": pl.metrics.MeanSquaredError(),
-            "val": pl.metrics.MeanSquaredError(),
-        }
+        self._mse_train = pl.metrics.MeanSquaredError()
+        self._mse_val = pl.metrics.MeanSquaredError()
+        self.mse = {"train": self._mse_train, "val": self._mse_val}
 
         self.image_size = ssd_model.image_size
         self.flip_train = ssd_model.flip_train
@@ -1129,9 +1128,20 @@ class SSDIR(pl.LightningModule):
         loss = criterion(self.model, self.guide, images)
 
         self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
-
+        coefs = {
+            "obs": self.rec_coef,
+            "z_what": self.what_coef,
+            "z_where": self.where_coef,
+            "z_present": self.present_coef,
+            "z_depth": self.depth_coef,
+        }
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
-            self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
+            self.log(
+                f"{stage}_loss_{site}",
+                site_loss * coefs[site],
+                prog_bar=False,
+                logger=True,
+            )
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
@@ -1167,15 +1177,20 @@ class SSDIR(pl.LightningModule):
             with torch.no_grad():
                 latents = self.encoder_forward(vis_images)
                 reconstructions = self.decoder_forward(latents)
-                self.mse[stage](
-                    reconstructions.permute(0, 2, 3, 1),
-                    denormalize(
-                        vis_images.permute(0, 2, 3, 1),
-                        pixel_mean=self.pixel_means,
-                        pixel_std=self.pixel_stds,
-                    ),
+
+                self.logger.experiment.log(
+                    {
+                        f"{stage}_mse": self.mse[stage](
+                            reconstructions.permute(0, 2, 3, 1),
+                            denormalize(
+                                vis_images.permute(0, 2, 3, 1),
+                                pixel_mean=self.pixel_means,
+                                pixel_std=self.pixel_stds,
+                            ),
+                        )
+                    },
+                    step=self.global_step,
                 )
-                self.logger.experiment.log({f"{stage}_mse": self.mse[stage]})
 
                 if self.visualize_latents:
                     z_what, z_where, z_present, z_depth = latents
