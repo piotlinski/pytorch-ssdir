@@ -1137,7 +1137,6 @@ class SSDIR(pl.LightningModule):
             "z_depth": self.depth_coef,
         }
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
-            print(site, site_loss * coefs[site])
             self.log(
                 f"{stage}_loss_{site}",
                 site_loss * coefs[site],
