@@ -92,7 +92,7 @@ class Encoder(nn.Module):
             torch.tensor([0.5, 0.5, 1.0, 1.0]), requires_grad=False
         )
         self.bg_present = nn.Parameter(torch.ones(1), requires_grad=False)
-        self.bg_depth_loc = nn.Parameter(torch.tensor([-1000.0]), requires_grad=False)
+        self.bg_depth_loc_eps = 0.1
         self.bg_depth_scale = nn.Parameter(torch.tensor([0.01]), requires_grad=False)
         self.empty_loc = nn.Parameter(
             torch.tensor(0.0, dtype=torch.float), requires_grad=False
@@ -142,7 +142,8 @@ class Encoder(nn.Module):
         batch_size = z_what[0].shape[0]
         where_bg = self.bg_where.expand(batch_size, 1, 4)
         present_bg = self.bg_present.expand(batch_size, 1, 1)
-        depth_bg_loc = self.bg_depth_loc.expand(batch_size, 1, 1)
+        min_depth_loc, _ = torch.min(z_depth_loc, dim=1)
+        depth_bg_loc = (min_depth_loc - self.bg_depth_loc_eps).view(batch_size, 1, 1)
         depth_bg_scale = self.bg_depth_scale.expand(batch_size, 1, 1)
         return (
             z_what,
@@ -1136,6 +1137,7 @@ class SSDIR(pl.LightningModule):
             "z_depth": self.depth_coef,
         }
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
+            print(site, site_loss * coefs[site])
             self.log(
                 f"{stage}_loss_{site}",
                 site_loss * coefs[site],
