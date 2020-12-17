@@ -81,25 +81,19 @@ class Encoder(nn.Module):
             z_depth_scale_const=z_depth_scale_const,
         ).requires_grad_(train_depth)
 
-        self.indices = nn.Parameter(
-            self.latents_indices(
+        self.register_buffer(
+            "indices",
+             self.latents_indices(
                 feature_maps=ssd.backbone.feature_maps,
                 boxes_per_loc=ssd.backbone.boxes_per_loc,
-            ),
-            requires_grad=False,
+            )
         )
-        self.bg_where = nn.Parameter(
-            torch.tensor([0.5, 0.5, 1.0, 1.0]), requires_grad=False
-        )
-        self.bg_present = nn.Parameter(torch.ones(1), requires_grad=False)
-        self.bg_depth_loc_eps = 0.1
-        self.bg_depth_scale = nn.Parameter(torch.tensor([0.01]), requires_grad=False)
-        self.empty_loc = nn.Parameter(
-            torch.tensor(0.0, dtype=torch.float), requires_grad=False
-        )
-        self.empty_scale = nn.Parameter(
-            torch.tensor(1.0, dtype=torch.float), requires_grad=False
-        )
+        self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
+        self.register_buffer("bg_present", torch.ones(1))
+        self.register_buffer("bg_depth_loc_eps", torch.tensor(0.1, dtype=torch.float))
+        self.register_buffer("bg_depth_scale", torch.tensor([0.01]))
+        self.register_buffer("empty_loc", torch.tensor(0.0, dtype=torch.float))
+        self.register_buffer("empty_scale", torch.tensor(1.0, dtype=torch.float))
 
     @staticmethod
     def latents_indices(
@@ -277,7 +271,7 @@ class Decoder(nn.Module):
         self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
         self.drop = drop_empty
         self.weighted = weighted_merge
-        self.empty_obj_const = nn.Parameter(torch.tensor(-1000.0), requires_grad=False)
+        self.register_buffer("empty_obj_const", torch.tensor(-1000.0))
         self.pixel_means = ssd.backbone.PIXEL_MEANS
         self.pixel_stds = ssd.backbone.PIXEL_STDS
 
@@ -1146,29 +1140,6 @@ class SSDIR(pl.LightningModule):
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
-        if self.visualize_latents and (
-            self.global_step % self.visualize_latents_freq == 0 or batch_nb == 0
-        ):
-            with torch.no_grad():
-                (
-                    (z_what_loc, z_what_scale),
-                    z_where_loc,
-                    z_present_p,
-                    (z_depth_loc, z_depth_scale),
-                ) = self.encoder(vis_images)
-            latents_dict = {
-                "z_what_loc": z_what_loc,
-                "z_what_scale": z_what_scale,
-                "z_where_loc": z_where_loc,
-                "z_present_p": z_present_p,
-                "z_depth_loc": z_depth_loc,
-                "z_depth_scale": z_depth_scale,
-            }
-            for latent_name, latent in latents_dict.items():
-                self.logger.experiment.log(
-                    {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
-                    step=self.global_step,
-                )
 
         if (
             self.global_step % self.visualize_inference_freq == 0
@@ -1230,6 +1201,30 @@ class SSDIR(pl.LightningModule):
                         },
                         step=self.global_step,
                     )
+
+        if self.visualize_latents and (
+            self.global_step % self.visualize_latents_freq == 0 or batch_nb == 0
+        ):
+            with torch.no_grad():
+                (
+                    (z_what_loc, z_what_scale),
+                    z_where_loc,
+                    z_present_p,
+                    (z_depth_loc, z_depth_scale),
+                ) = self.encoder(vis_images)
+            latents_dict = {
+                "z_what_loc": z_what_loc,
+                "z_what_scale": z_what_scale,
+                "z_where_loc": z_where_loc,
+                "z_present_p": z_present_p,
+                "z_depth_loc": z_depth_loc,
+                "z_depth_scale": z_depth_scale,
+            }
+            for latent_name, latent in latents_dict.items():
+                self.logger.experiment.log(
+                    {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
+                    step=self.global_step,
+                )
 
         return loss
 

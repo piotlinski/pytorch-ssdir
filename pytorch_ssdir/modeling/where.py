@@ -31,7 +31,7 @@ class WhereEncoder(nn.Module):
     ):
         super().__init__()
         self.ssd_loc_reg_headers = ssd_box_predictor.reg_headers
-        self.anchors = nn.Parameter(ssd_anchors, requires_grad=False)
+        self.register_buffer("anchors", ssd_anchors)
         self.center_variance = ssd_center_variance
         self.size_variance = ssd_size_variance
 
