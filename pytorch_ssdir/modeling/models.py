@@ -83,10 +83,10 @@ class Encoder(nn.Module):
 
         self.register_buffer(
             "indices",
-             self.latents_indices(
+            self.latents_indices(
                 feature_maps=ssd.backbone.feature_maps,
                 boxes_per_loc=ssd.backbone.boxes_per_loc,
-            )
+            ),
         )
         self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
         self.register_buffer("bg_present", torch.ones(1))
