@@ -37,6 +37,14 @@ class WhatEncoder(nn.Module):
 
     def _build_feature_encoder(self, in_channels: int) -> nn.Module:
         """Prepare single feature encoder."""
+        if self.n_hidden == -1:
+            return nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=self.out_size,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            )
         hid_size = 2 * self.out_size
         layers = [
             nn.Conv2d(in_channels=in_channels, out_channels=hid_size, kernel_size=1)
