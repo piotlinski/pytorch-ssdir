@@ -12,46 +12,56 @@ class WhatEncoder(nn.Module):
     def __init__(
         self,
         z_what_size: int,
+        n_hidden: int,
         feature_channels: List[int],
         feature_maps: List[int],
         z_what_scale_const: Optional[float] = None,
     ):
         super().__init__()
-        self.h_size = z_what_size
+        self.out_size = z_what_size
         self.feature_channels = feature_channels
         self.feature_maps = feature_maps
+        self.n_hidden = n_hidden
+        feature_idx = self.feature_maps.index(min(self.feature_maps))
         self.loc_encoders = self._build_what_encoders()
-        self.bg_loc_encoder = self._build_what_bg_encoder()
+        self.bg_loc_encoder = self._build_feature_encoder(
+            self.feature_channels[feature_idx]
+        )
         self.z_what_scale_const = z_what_scale_const
         if z_what_scale_const is None:
             self.scale_encoders = self._build_what_encoders()
-            self.bg_scale_encoder = self._build_what_bg_encoder()
+            self.bg_scale_encoder = self._build_feature_encoder(
+                self.feature_channels[feature_idx]
+            )
         self.init_encoders()
+
+    def _build_feature_encoder(self, in_channels: int) -> nn.Module:
+        """Prepare single feature encoder."""
+        hid_size = 2 * self.out_size
+        layers = [
+            nn.Conv2d(in_channels=in_channels, out_channels=hid_size, kernel_size=1)
+        ]
+        for _ in range(self.n_hidden):
+            layers.append(
+                nn.Conv2d(
+                    in_channels=hid_size,
+                    out_channels=hid_size,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                )
+            )
+        layers.append(
+            nn.Conv2d(in_channels=hid_size, out_channels=self.out_size, kernel_size=1)
+        )
+        return nn.Sequential(*layers)
 
     def _build_what_encoders(self) -> nn.ModuleList:
         """Build conv layers list for encoding backbone output."""
         layers = [
-            nn.Conv2d(
-                in_channels=channels,
-                out_channels=self.h_size,
-                kernel_size=3,
-                stride=1,
-                padding=1,
-            )
-            for channels in self.feature_channels
+            self._build_feature_encoder(channels) for channels in self.feature_channels
         ]
         return nn.ModuleList(layers)
-
-    def _build_what_bg_encoder(self) -> nn.Module:
-        """Build layer for encoding background what latent from largest feature map."""
-        feature_idx = self.feature_maps.index(min(self.feature_maps))
-        return nn.Conv2d(
-            in_channels=self.feature_channels[feature_idx],
-            out_channels=self.h_size,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-        )
 
     def forward(
         self, features: Tuple[torch.Tensor, ...]
@@ -73,14 +83,14 @@ class WhatEncoder(nn.Module):
                 loc_enc(feature)
                 .permute(0, 2, 3, 1)
                 .contiguous()
-                .view(batch_size, -1, self.h_size)
+                .view(batch_size, -1, self.out_size)
             )
             if self.z_what_scale_const is None:
                 scales.append(
                     torch.exp(scale_enc(feature))
                     .permute(0, 2, 3, 1)
                     .contiguous()
-                    .view(batch_size, -1, self.h_size)
+                    .view(batch_size, -1, self.out_size)
                 )
             else:
                 scales.append(torch.full_like(locs[-1], fill_value=scale_enc))
@@ -89,14 +99,14 @@ class WhatEncoder(nn.Module):
             self.bg_loc_encoder(features[bg_feature_idx])
             .permute(0, 2, 3, 1)
             .contiguous()
-            .view(batch_size, -1, self.h_size)
+            .view(batch_size, -1, self.out_size)
         )
         if self.z_what_scale_const is None:
             scales.append(
                 torch.exp(self.bg_scale_encoder(features[bg_feature_idx]))
                 .permute(0, 2, 3, 1)
                 .contiguous()
-                .view(batch_size, -1, self.h_size)
+                .view(batch_size, -1, self.out_size)
             )
         else:
             scales.append(torch.full_like(locs[-1], fill_value=self.z_what_scale_const))
