@@ -49,6 +49,7 @@ class Encoder(nn.Module):
         self,
         ssd: SSD,
         z_what_size: int = 64,
+        z_what_hidden: int = 2,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         z_present_eps: float = 1e-3,
@@ -63,6 +64,7 @@ class Encoder(nn.Module):
         self.z_present_eps = z_present_eps
         self.what_enc = WhatEncoder(
             z_what_size=z_what_size,
+            n_hidden=z_what_hidden,
             z_what_scale_const=z_what_scale_const,
             feature_channels=ssd.backbone.out_channels,
             feature_maps=ssd.backbone.feature_maps,
@@ -440,6 +442,7 @@ class SSDIR(pl.LightningModule):
         num_workers: int = 8,
         pin_memory: bool = True,
         z_what_size: int = 64,
+        z_what_hidden: int = 2,
         z_present_p_prior: float = 0.01,
         z_where_pos_loc_prior: float = 0.5,
         z_where_size_loc_prior: float = 0.2,
@@ -479,6 +482,7 @@ class SSDIR(pl.LightningModule):
         :param num_workers: number of workers for dataloader
         :param pin_memory: pin memory for training
         :param z_what_size: latent what size
+        :param z_what_hidden: number of extra hidden layers for what encoder
         :param z_present_p_prior: present prob prior
         :param z_where_pos_loc_prior: prior z_where loc for bbox position
         :param z_where_size_loc_prior: prior z_where loc for bbox size
@@ -511,6 +515,7 @@ class SSDIR(pl.LightningModule):
         self.encoder = Encoder(
             ssd=ssd_model,
             z_what_size=z_what_size,
+            z_what_hidden=z_what_hidden,
             z_what_scale_const=z_what_scale_const,
             z_depth_scale_const=z_depth_scale_const,
             train_what=train_what,
@@ -643,6 +648,12 @@ class SSDIR(pl.LightningModule):
         )
         parser.add_argument(
             "--z_what_size", type=int, default=64, help="z_what latent size"
+        )
+        parser.add_argument(
+            "--z_what_hidden",
+            type=int,
+            default=2,
+            help="Number of what encoder hidden layers; -1 for backward compatibility",
         )
         parser.add_argument(
             "--z_present_p_prior",
