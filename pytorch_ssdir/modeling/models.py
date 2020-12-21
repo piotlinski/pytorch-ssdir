@@ -1123,20 +1123,8 @@ class SSDIR(pl.LightningModule):
         loss = criterion(self.model, self.guide, images)
 
         self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
-        coefs = {
-            "obs": self.rec_coef,
-            "z_what": self.what_coef,
-            "z_where": self.where_coef,
-            "z_present": self.present_coef,
-            "z_depth": self.depth_coef,
-        }
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
-            self.log(
-                f"{stage}_loss_{site}",
-                site_loss * coefs[site],
-                prog_bar=False,
-                logger=True,
-            )
+            self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
