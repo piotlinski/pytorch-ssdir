@@ -8,7 +8,8 @@ from pytorch_ssdir.modeling.what import WhatDecoder, WhatEncoder
 @pytest.mark.parametrize("z_what_size", [8, 10, 13])
 @pytest.mark.parametrize("feature_channels", [[5], [3, 7], [2, 4, 8]])
 @pytest.mark.parametrize("batch_size", [1, 2, 3])
-def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size):
+@pytest.mark.parametrize("n_hidden", [-1, 0, 1, 2])
+def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size, n_hidden):
     """Verify what encoder z dimensions."""
     inputs = [
         torch.rand(batch_size, feature_channel, grid_size, grid_size)
@@ -18,6 +19,7 @@ def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size):
         z_what_size=z_what_size,
         feature_channels=feature_channels,
         feature_maps=list(range(1, len(feature_channels) + 1)),
+        n_hidden=n_hidden,
     )
     locs, scales = encoder(inputs)
     assert (
@@ -35,7 +37,9 @@ def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size):
 def test_what_encoder_dtype():
     """Verify what encoder output dtype."""
     inputs = [torch.rand(3, 4, 5, 5)]
-    encoder = WhatEncoder(z_what_size=7, feature_channels=[4], feature_maps=[5])
+    encoder = WhatEncoder(
+        z_what_size=7, feature_channels=[4], feature_maps=[5], n_hidden=1
+    )
     locs, scales = encoder(inputs)
     assert locs.dtype == torch.float
     assert scales.dtype == torch.float
@@ -51,6 +55,7 @@ def test_what_encoder_constant_scale():
         feature_channels=[4],
         feature_maps=[5],
         z_what_scale_const=z_what_scale_const,
+        n_hidden=1,
     )
     locs, scales = encoder(inputs)
     assert torch.all(scales == z_what_scale_const)
