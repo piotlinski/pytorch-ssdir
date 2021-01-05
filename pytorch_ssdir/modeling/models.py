@@ -434,6 +434,7 @@ class SSDIR(pl.LightningModule):
         self,
         ssd_model: SSD,
         learning_rate: float = 1e-3,
+        momentum: float = 0.9,
         ssd_lr_multiplier: float = 1.0,
         warm_restart_epochs: float = 1 / 3,
         warm_restart_len_mult: int = 2,
@@ -474,6 +475,7 @@ class SSDIR(pl.LightningModule):
         """
         :param ssd_model: trained SSD to use as backbone
         :param learning_rate: learning rate
+        :param momentum: SGD momentum
         :param ssd_lr_multiplier: ssd learning rate multiplier (learning rate * mult)
         :param warm_restart_epochs: number of epochs before resetting learning rate
         :param warm_restart_len_mult: coef to multiply number of epochs after each reset
@@ -533,6 +535,7 @@ class SSDIR(pl.LightningModule):
         )
 
         self.lr = learning_rate
+        self.momentum = momentum
         self.ssd_lr_multiplier = ssd_lr_multiplier
         self.warm_restart_epochs = warm_restart_epochs
         self.warm_restart_len_mult = warm_restart_len_mult
@@ -607,6 +610,12 @@ class SSDIR(pl.LightningModule):
             type=float,
             default=1e-3,
             help="Learning rate used for training the model",
+        )
+        parser.add_argument(
+            "--momentum",
+            type=float,
+            default=0.9,
+            help="Momentum used for training the model with SGD",
         )
         parser.add_argument(
             "--ssd_lr_multiplier",
@@ -1256,7 +1265,9 @@ class SSDIR(pl.LightningModule):
         else:
             optimizer_params = self.parameters()
 
-        optimizer = torch.optim.Adam(optimizer_params, lr=self.lr)
+        optimizer = torch.optim.SGD(
+            optimizer_params, lr=self.lr, momentum=self.momentum
+        )
         lr_scheduler = CosineAnnealingWarmRestarts(
             optimizer=optimizer,
             T_0=warm_restart_steps,
