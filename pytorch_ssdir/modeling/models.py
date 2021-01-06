@@ -61,18 +61,12 @@ class Encoder(nn.Module):
         train_backbone: bool = True,
         train_backbone_layers: int = -1,
         clone_backbone: bool = False,
-        clone_backbone_layers: int = -1,
     ):
         super().__init__()
         self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
         self.clone_backbone = clone_backbone
-        self.clone_backbone_layers = clone_backbone_layers
         if self.clone_backbone:
-            self.cloned = nn.Sequential(
-                *deepcopy(
-                    list(self.ssd_backbone.children())[-self.clone_backbone_layers :]
-                )
-            ).requires_grad_(True)
+            self.ssd_backbone_cloned = deepcopy(self.ssd_backbone).requires_grad_(True)
         if train_backbone_layers >= 0 and train_backbone:
             for module in list(self.ssd_backbone.children())[train_backbone_layers:][
                 ::-1
@@ -238,26 +232,6 @@ class Encoder(nn.Module):
             (z_depth_loc, z_depth_scale),
         )
 
-    def backbone_forward(
-        self, images: torch.Tensor
-    ) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        """Perform forward pass in backbone, considering cloned layers."""
-        if self.clone_backbone:
-            intermediate = images
-            for child in list(self.ssd_backbone.children())[
-                : -self.clone_backbone_layers
-            ]:
-                intermediate = child(intermediate)
-            where_present_features = intermediate
-            for child in list(self.ssd_backbone.children())[
-                -self.clone_backbone_layers :
-            ]:
-                where_present_features = child(where_present_features)
-            what_depth_features = self.cloned(intermediate)
-        else:
-            where_present_features = what_depth_features = self.ssd_backbone(images)
-        return where_present_features, what_depth_features
-
     def forward(
         self, images: torch.Tensor
     ) -> Tuple[
@@ -270,7 +244,11 @@ class Encoder(nn.Module):
         .. and outputs latent representation tuple
         .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
         """
-        where_present_features, what_depth_features = self.backbone_forward(images)
+        where_present_features = self.ssd_backbone(images)
+        if self.clone_backbone:
+            what_depth_features = self.ssd_backbone_cloned(images)
+        else:
+            what_depth_features = where_present_features
         z_where = self.where_enc(where_present_features)
         z_present = self.present_enc(where_present_features)
         z_what_loc, z_what_scale = self.what_enc(what_depth_features)
@@ -504,7 +482,6 @@ class SSDIR(pl.LightningModule):
         train_backbone: bool = True,
         train_backbone_layers: int = -1,
         clone_backbone: bool = False,
-        clone_backbone_layers: int = -1,
         visualize_inference: bool = True,
         visualize_inference_freq: int = 500,
         n_visualize_objects: int = 10,
@@ -548,7 +525,6 @@ class SSDIR(pl.LightningModule):
         :param train_backbone: train ssd backbone
         :param train_backbone_layers: n layers to train in the backbone (neg for all)
         :param clone_backbone: clone backbone for depth and what encoders
-        :param clone_backbone_layers: n layers to clone (neg for all)
         :param visualize_inference: visualize inference
         :param visualize_inference_freq: how often to visualize inference
         :param n_visualize_objects: number of objects to visualize
@@ -570,7 +546,6 @@ class SSDIR(pl.LightningModule):
             train_backbone=train_backbone,
             train_backbone_layers=train_backbone_layers,
             clone_backbone=clone_backbone,
-            clone_backbone_layers=clone_backbone_layers,
         )
         self.decoder = Decoder(
             ssd=ssd_model,
@@ -865,15 +840,6 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=False,
             help="Clone SSD backbone for what and depth encoders",
-        )
-        parser.add_argument(
-            "--clone_backbone_layers",
-            type=int,
-            default=-1,
-            help=(
-                "Number of final layers to clone for what and depth encoders "
-                "(negative for all)"
-            ),
         )
         parser.add_argument(
             "--flip_train",

@@ -70,13 +70,12 @@ def test_disabling_backbone_layers(n_trained, ssd_model):
             assert all(param.requires_grad is False for param in module.parameters())
 
 
-@pytest.mark.parametrize("n_cloned", [1, 2, 5])
-def test_cloning_backbone(n_cloned, ssd_model):
+def test_cloning_backbone(ssd_model):
     """Verify if disabling encoder backbone layers disables it effectively."""
-    encoder = Encoder(
-        ssd=ssd_model, clone_backbone=True, clone_backbone_layers=n_cloned
+    encoder = Encoder(ssd=ssd_model, clone_backbone=True)
+    assert len(list(encoder.ssd_backbone_cloned.children())) <= len(
+        list(encoder.ssd_backbone.children())
     )
-    assert 0 < len(list(encoder.cloned.children())) <= n_cloned
 
 
 @pytest.mark.parametrize("train_backbone", [False, True])
@@ -86,16 +85,18 @@ def test_cloning_grads(train_backbone, ssd_model):
         ssd=ssd_model,
         train_backbone=train_backbone,
         clone_backbone=True,
-        clone_backbone_layers=1,
     )
     assert all(
         param.requires_grad is train_backbone
         for param in encoder.ssd_backbone.parameters()
     )
-    assert all(param.requires_grad is True for param in encoder.cloned.parameters())
+    assert all(
+        param.requires_grad is True
+        for param in encoder.ssd_backbone_cloned.parameters()
+    )
     for backbone_child, cloned_child in zip(
-        list(encoder.ssd_backbone.children())[-encoder.clone_backbone_layers :],
-        list(encoder.cloned.children()),
+        list(encoder.ssd_backbone.children()),
+        list(encoder.ssd_backbone_cloned.children()),
     ):
         assert backbone_child is not cloned_child
         for backbone_param, cloned_param in zip(
