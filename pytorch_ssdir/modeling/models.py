@@ -58,9 +58,15 @@ class Encoder(nn.Module):
         train_present: bool = True,
         train_depth: bool = True,
         train_backbone: bool = True,
+        train_backbone_layers: int = -1,
     ):
         super().__init__()
         self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
+        if train_backbone_layers >= 0 and train_backbone:
+            for module in list(self.ssd_backbone.children())[train_backbone_layers:][
+                ::-1
+            ]:
+                module.requires_grad_(False)
         self.z_present_eps = z_present_eps
         self.what_enc = WhatEncoder(
             z_what_size=z_what_size,
@@ -465,6 +471,7 @@ class SSDIR(pl.LightningModule):
         train_present: bool = True,
         train_depth: bool = True,
         train_backbone: bool = True,
+        train_backbone_layers: int = -1,
         visualize_inference: bool = True,
         visualize_inference_freq: int = 500,
         n_visualize_objects: int = 10,
@@ -506,6 +513,7 @@ class SSDIR(pl.LightningModule):
         :param train_present: train present encoder
         :param train_depth: train depth encoder
         :param train_backbone: train ssd backbone
+        :param train_backbone_layers: n layers to train in the backbone (neg for all)
         :param visualize_inference: visualize inference
         :param visualize_inference_freq: how often to visualize inference
         :param n_visualize_objects: number of objects to visualize
@@ -525,6 +533,7 @@ class SSDIR(pl.LightningModule):
             train_present=train_present,
             train_depth=train_depth,
             train_backbone=train_backbone,
+            train_backbone_layers=train_backbone_layers,
         )
         self.decoder = Decoder(
             ssd=ssd_model,

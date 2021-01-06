@@ -57,6 +57,19 @@ def test_disabling_encoder_modules(modules_enabled, ssd_model):
         )
 
 
+@pytest.mark.parametrize("n_trained", [0, 1, 2, 5])
+def test_disabling_backbone_layers(n_trained, ssd_model):
+    """Verify if disabling encoder backbone layers disables it effectively."""
+    encoder = Encoder(
+        ssd=ssd_model, train_backbone=True, train_backbone_layers=n_trained
+    )
+    for idx, module in enumerate(encoder.ssd_backbone.children()):
+        if idx < n_trained:
+            assert all(param.requires_grad is True for param in module.parameters())
+        else:
+            assert all(param.requires_grad is False for param in module.parameters())
+
+
 def test_latents_indices(ssd_model, n_ssd_features):
     """Verify latents indices calculation."""
     indices = Encoder.latents_indices(
