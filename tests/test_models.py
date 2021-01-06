@@ -93,6 +93,15 @@ def test_cloning_grads(train_backbone, ssd_model):
         for param in encoder.ssd_backbone.parameters()
     )
     assert all(param.requires_grad is True for param in encoder.cloned.parameters())
+    for backbone_child, cloned_child in zip(
+        list(encoder.ssd_backbone.children())[-encoder.clone_backbone_layers :],
+        list(encoder.cloned.children()),
+    ):
+        assert backbone_child is not cloned_child
+        for backbone_param, cloned_param in zip(
+            backbone_child.parameters(), cloned_child.parameters()
+        ):
+            assert backbone_param is not cloned_param
 
 
 def test_latents_indices(ssd_model, n_ssd_features):
