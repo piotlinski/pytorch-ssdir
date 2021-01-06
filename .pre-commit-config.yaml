@@ -20,12 +20,10 @@ repos:
     hooks:
       - id: black
 
-  - repo: https://gitlab.com/pycqa/flake8
-    rev: 3.8.4
+  - repo: https://github.com/life4/flakehell
+    rev: v.0.7.1
     hooks:
-      - id: flake8
-        additional_dependencies: [flake8-bugbear, pyflakes, pycodestyle]
-        args: [--config=pyproject.toml]
+      - id: flakehell
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v0.782

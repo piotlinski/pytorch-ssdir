@@ -57,6 +57,53 @@ def test_disabling_encoder_modules(modules_enabled, ssd_model):
         )
 
 
+@pytest.mark.parametrize("n_trained", [0, 1, 2, 5])
+def test_disabling_backbone_layers(n_trained, ssd_model):
+    """Verify if disabling encoder backbone layers disables it effectively."""
+    encoder = Encoder(
+        ssd=ssd_model, train_backbone=True, train_backbone_layers=n_trained
+    )
+    for idx, module in enumerate(encoder.ssd_backbone.children()):
+        if idx < n_trained:
+            assert all(param.requires_grad is True for param in module.parameters())
+        else:
+            assert all(param.requires_grad is False for param in module.parameters())
+
+
+@pytest.mark.parametrize("n_cloned", [1, 2, 5])
+def test_cloning_backbone(n_cloned, ssd_model):
+    """Verify if disabling encoder backbone layers disables it effectively."""
+    encoder = Encoder(
+        ssd=ssd_model, clone_backbone=True, clone_backbone_layers=n_cloned
+    )
+    assert 0 < len(list(encoder.cloned.children())) <= n_cloned
+
+
+@pytest.mark.parametrize("train_backbone", [False, True])
+def test_cloning_grads(train_backbone, ssd_model):
+    """Verify if train_backbone is used appropriately for backbone and cloned."""
+    encoder = Encoder(
+        ssd=ssd_model,
+        train_backbone=train_backbone,
+        clone_backbone=True,
+        clone_backbone_layers=1,
+    )
+    assert all(
+        param.requires_grad is train_backbone
+        for param in encoder.ssd_backbone.parameters()
+    )
+    assert all(param.requires_grad is True for param in encoder.cloned.parameters())
+    for backbone_child, cloned_child in zip(
+        list(encoder.ssd_backbone.children())[-encoder.clone_backbone_layers :],
+        list(encoder.cloned.children()),
+    ):
+        assert backbone_child is not cloned_child
+        for backbone_param, cloned_param in zip(
+            backbone_child.parameters(), cloned_child.parameters()
+        ):
+            assert backbone_param is not cloned_param
+
+
 def test_latents_indices(ssd_model, n_ssd_features):
     """Verify latents indices calculation."""
     indices = Encoder.latents_indices(
