@@ -853,6 +853,29 @@ class SSDIR(pl.LightningModule):
             help="Train SSD backbone",
         )
         parser.add_argument(
+            "--train_backbone_layers",
+            type=int,
+            default=-1,
+            help="Number of final layers to train in the backbone (negative for all)",
+        )
+        parser.add_argument(
+            "--clone_backbone",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Clone SSD backbone for what and depth encoders",
+        )
+        parser.add_argument(
+            "--clone_backbone_layers",
+            type=int,
+            default=-1,
+            help=(
+                "Number of final layers to clone for what and depth encoders "
+                "(negative for all)"
+            ),
+        )
+        parser.add_argument(
             "--flip_train",
             type=str2bool,
             nargs="?",
