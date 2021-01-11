@@ -136,42 +136,23 @@ def test_pad_indices(n_present, expected):
 
 
 @pytest.mark.parametrize(
-    "merge_function, inputs, weights, expected",
+    "inputs, weights, expected",
     [
         (
-            Decoder.merge_reconstructions_masked,
-            torch.tensor([[[[[1.0, 0.0], [0.0, 0.0]]], [[[0.5, 0.5], [0.5, 0.5]]]]]),
-            torch.tensor([[0.3, 0.2]]),
-            torch.tensor([[[[[1.0, 0.5], [0.5, 0.5]]]]]),
-        ),
-        (
-            Decoder.merge_reconstructions_masked,
-            torch.tensor(
-                [
-                    [[[[0.2, 0.0], [0.1, 0.0]]], [[[0.4, 0.3], [0.0, 0.1]]]],
-                    [[[[0.4, 0.3], [0.2, 0.1]]], [[[0.5, 0.5], [0.5, 0.5]]]],
-                ]
-            ),
-            torch.tensor([[0.2, 0.5], [0.4, 0.1]]),
-            torch.tensor([[[[0.4, 0.3], [0.1, 0.1]]], [[[0.4, 0.3], [0.2, 0.1]]]]),
-        ),
-        (
-            Decoder.merge_reconstructions_weighted,
             torch.ones(1, 2, 3, 5, 5),
             torch.tensor([[0.3, 0.2]]),
             torch.ones(1, 3, 5, 5),
         ),
         (
-            Decoder.merge_reconstructions_weighted,
             torch.ones(2, 3, 3, 2, 2),
             torch.tensor([[0.2, 0.5, 0.3], [0.1, 0.4, 0.5]]),
             torch.ones(2, 3, 2, 2),
         ),
     ],
 )
-def test_merge_reconstructions(merge_function, inputs, weights, expected):
+def test_merge_reconstructions(inputs, weights, expected):
     """Verify reconstructions merging."""
-    merged = merge_function(inputs, weights=weights)
+    merged = Decoder.merge_reconstructions(inputs, weights=weights)
     assert merged.shape == (inputs.shape[0], *inputs.shape[2:])
     assert torch.all(torch.le(torch.abs(merged - expected), 1e-3))
 

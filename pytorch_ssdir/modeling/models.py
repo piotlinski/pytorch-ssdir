@@ -280,14 +280,12 @@ class Decoder(nn.Module):
         ssd: SSD,
         z_what_size: int = 64,
         drop_empty: bool = True,
-        weighted_merge: bool = False,
         train_what: bool = True,
     ):
         super().__init__()
         self.what_dec = WhatDecoder(z_what_size=z_what_size).requires_grad_(train_what)
         self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
         self.drop = drop_empty
-        self.weighted = weighted_merge
         self.register_buffer("empty_obj_const", torch.tensor(-1000.0))
         self.pixel_means = ssd.backbone.PIXEL_MEANS
         self.pixel_stds = ssd.backbone.PIXEL_STDS
@@ -367,7 +365,7 @@ class Decoder(nn.Module):
         return outputs.clamp_(0.0, 1.0)
 
     @staticmethod
-    def merge_reconstructions_weighted(
+    def merge_reconstructions(
         reconstructions: torch.Tensor, weights: torch.Tensor
     ) -> torch.Tensor:
         """Combine decoder images into one by weighted sum."""
@@ -375,6 +373,14 @@ class Decoder(nn.Module):
             *weights.shape[:2], 1, 1, 1
         )
         return torch.sum(weighted_images, dim=1)
+
+    @staticmethod
+    def fill_background(
+        merged: torch.Tensor, backgrounds: torch.Tensor
+    ) -> torch.Tensor:
+        """Fill merged images background with background reconstruction."""
+        mask = torch.where(merged < 1e-3, 1.0, 0.0)
+        return merged + backgrounds * mask
 
     def reconstruct_objects(
         self,
@@ -431,14 +437,11 @@ class Decoder(nn.Module):
             z_what, z_where, z_present, z_depth
         )
         # merge reconstructions
-        if self.weighted:
-            output = self.merge_reconstructions_weighted(
-                reconstructions=reconstructions, weights=depths
-            )
-        else:
-            output = self.merge_reconstructions_masked(
-                reconstructions=reconstructions, weights=depths
-            )
+        objects, object_weights = reconstructions[:, :-1], depths[:, :-1]
+        merged = self.merge_reconstructions(
+            reconstructions=objects, weights=object_weights
+        )
+        output = self.fill_background(merged=merged, backgrounds=reconstructions[:, -1])
         return output
 
 
@@ -468,7 +471,6 @@ class SSDIR(pl.LightningModule):
         z_where_scale_const: float = 0.05,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
-        weighted_merge: bool = False,
         normalize_elbo: bool = False,
         what_coef: float = 1.0,
         where_coef: float = 1.0,
@@ -511,7 +513,6 @@ class SSDIR(pl.LightningModule):
         :param z_where_scale_const: z_where scale used in inference
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
-        :param weighted_merge: merge output images using weighted sum (else: masked)
         :param normalize_elbo: normalize elbo components by tenors' numels
         :param what_coef: z_what loss component coefficient
         :param where_coef: z_where loss component coefficient
@@ -551,7 +552,6 @@ class SSDIR(pl.LightningModule):
             ssd=ssd_model,
             z_what_size=z_what_size,
             drop_empty=drop,
-            weighted_merge=weighted_merge,
             train_what=train_what,
         )
 
@@ -740,14 +740,6 @@ class SSDIR(pl.LightningModule):
             type=float,
             default=None,
             help="constant z_depth scale",
-        )
-        parser.add_argument(
-            "--weighted_merge",
-            type=str2bool,
-            nargs="?",
-            const=True,
-            default=False,
-            help="Use weighted output merging method",
         )
         parser.add_argument(
             "--normalize_elbo",
