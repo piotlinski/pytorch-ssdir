@@ -1,6 +1,7 @@
 """SSDIR encoder, decoder, model and guide declarations."""
 import warnings
 from argparse import ArgumentParser
+from copy import deepcopy
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
@@ -58,9 +59,19 @@ class Encoder(nn.Module):
         train_present: bool = True,
         train_depth: bool = True,
         train_backbone: bool = True,
+        train_backbone_layers: int = -1,
+        clone_backbone: bool = False,
     ):
         super().__init__()
         self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
+        self.clone_backbone = clone_backbone
+        if self.clone_backbone:
+            self.ssd_backbone_cloned = deepcopy(self.ssd_backbone).requires_grad_(True)
+        if train_backbone_layers >= 0 and train_backbone:
+            for module in list(self.ssd_backbone.children())[train_backbone_layers:][
+                ::-1
+            ]:
+                module.requires_grad_(False)
         self.z_present_eps = z_present_eps
         self.what_enc = WhatEncoder(
             z_what_size=z_what_size,
@@ -233,11 +244,15 @@ class Encoder(nn.Module):
         .. and outputs latent representation tuple
         .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
         """
-        features = self.ssd_backbone(images)
-        z_where = self.where_enc(features)
-        z_present = self.present_enc(features)
-        z_what_loc, z_what_scale = self.what_enc(features)
-        z_depth_loc, z_depth_scale = self.depth_enc(features)
+        where_present_features = self.ssd_backbone(images)
+        if self.clone_backbone:
+            what_depth_features = self.ssd_backbone_cloned(images)
+        else:
+            what_depth_features = where_present_features
+        z_where = self.where_enc(where_present_features)
+        z_present = self.present_enc(where_present_features)
+        z_what_loc, z_what_scale = self.what_enc(what_depth_features)
+        z_depth_loc, z_depth_scale = self.depth_enc(what_depth_features)
         latents = (
             (z_what_loc, z_what_scale),
             z_where,
@@ -465,6 +480,8 @@ class SSDIR(pl.LightningModule):
         train_present: bool = True,
         train_depth: bool = True,
         train_backbone: bool = True,
+        train_backbone_layers: int = -1,
+        clone_backbone: bool = False,
         visualize_inference: bool = True,
         visualize_inference_freq: int = 500,
         n_visualize_objects: int = 10,
@@ -506,6 +523,8 @@ class SSDIR(pl.LightningModule):
         :param train_present: train present encoder
         :param train_depth: train depth encoder
         :param train_backbone: train ssd backbone
+        :param train_backbone_layers: n layers to train in the backbone (neg for all)
+        :param clone_backbone: clone backbone for depth and what encoders
         :param visualize_inference: visualize inference
         :param visualize_inference_freq: how often to visualize inference
         :param n_visualize_objects: number of objects to visualize
@@ -525,6 +544,8 @@ class SSDIR(pl.LightningModule):
             train_present=train_present,
             train_depth=train_depth,
             train_backbone=train_backbone,
+            train_backbone_layers=train_backbone_layers,
+            clone_backbone=clone_backbone,
         )
         self.decoder = Decoder(
             ssd=ssd_model,
@@ -805,6 +826,20 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=True,
             help="Train SSD backbone",
+        )
+        parser.add_argument(
+            "--train_backbone_layers",
+            type=int,
+            default=-1,
+            help="Number of final layers to train in the backbone (negative for all)",
+        )
+        parser.add_argument(
+            "--clone_backbone",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Clone SSD backbone for what and depth encoders",
         )
         parser.add_argument(
             "--flip_train",
