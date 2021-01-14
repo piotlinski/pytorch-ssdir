@@ -101,10 +101,6 @@ class Encoder(nn.Module):
                 boxes_per_loc=ssd.backbone.boxes_per_loc,
             ),
         )
-        self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
-        self.register_buffer("bg_present", torch.ones(1))
-        self.register_buffer("bg_depth_loc_eps", torch.tensor(0.1, dtype=torch.float))
-        self.register_buffer("bg_depth_scale", torch.tensor([0.01]))
         self.register_buffer("empty_loc", torch.tensor(0.0, dtype=torch.float))
         self.register_buffer("empty_scale", torch.tensor(1.0, dtype=torch.float))
 
@@ -117,50 +113,14 @@ class Encoder(nn.Module):
         .. Caters for the difference between z_what, z_depth and z_where, z_present.
         """
         indices = []
-        img_idx = last_img_idx = 0
+        idx = 0
         for feature_map, n_boxes in zip(feature_maps, boxes_per_loc):
             for feature_map_idx in range(feature_map ** 2):
-                img_idx = last_img_idx + feature_map_idx
                 indices.append(
-                    torch.full(size=(n_boxes,), fill_value=img_idx, dtype=torch.float)
+                    torch.full(size=(n_boxes,), fill_value=idx, dtype=torch.float)
                 )
-            last_img_idx = img_idx + 1
-        indices.append(
-            torch.full(size=(1,), fill_value=last_img_idx, dtype=torch.float)
-        )
+                idx += 1
         return torch.cat(indices, dim=0)
-
-    def append_bg_latents(
-        self,
-        latents: Tuple[
-            Tuple[torch.Tensor, torch.Tensor],
-            torch.Tensor,
-            torch.Tensor,
-            Tuple[torch.Tensor, torch.Tensor],
-        ],
-    ) -> Tuple[
-        Tuple[torch.Tensor, torch.Tensor],
-        torch.Tensor,
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-    ]:
-        """Add background latents to z_where, z_present and z_depth."""
-        z_what, z_where, z_present, (z_depth_loc, z_depth_scale) = latents
-        batch_size = z_what[0].shape[0]
-        where_bg = self.bg_where.expand(batch_size, 1, 4)
-        present_bg = self.bg_present.expand(batch_size, 1, 1)
-        min_depth_loc, _ = torch.min(z_depth_loc, dim=1)
-        depth_bg_loc = (min_depth_loc - self.bg_depth_loc_eps).view(batch_size, 1, 1)
-        depth_bg_scale = self.bg_depth_scale.expand(batch_size, 1, 1)
-        return (
-            z_what,
-            torch.cat((z_where, where_bg), dim=1),
-            torch.cat((z_present, present_bg), dim=1),
-            (
-                torch.cat((z_depth_loc, depth_bg_loc), dim=1),
-                torch.cat((z_depth_scale, depth_bg_scale), dim=1),
-            ),
-        )
 
     def pad_latents(
         self,
@@ -184,10 +144,12 @@ class Encoder(nn.Module):
             (z_depth_loc, z_depth_scale),
         ) = latents
         # repeat rows to match z_where and z_present
-        z_what_loc = z_what_loc.index_select(dim=1, index=self.indices.long())
-        z_what_scale = z_what_scale.index_select(dim=1, index=self.indices.long())
-        z_depth_loc = z_depth_loc.index_select(dim=1, index=self.indices.long())
-        z_depth_scale = z_depth_scale.index_select(dim=1, index=self.indices.long())
+        indices = self.indices.long()
+        what_indices = torch.hstack((indices, indices.max() + 1))  # consider background
+        z_what_loc = z_what_loc.index_select(dim=1, index=what_indices)
+        z_what_scale = z_what_scale.index_select(dim=1, index=what_indices)
+        z_depth_loc = z_depth_loc.index_select(dim=1, index=indices)
+        z_depth_scale = z_depth_scale.index_select(dim=1, index=indices)
         return (
             (z_what_loc, z_what_scale),
             z_where,
@@ -220,8 +182,11 @@ class Encoder(nn.Module):
             (z_depth_loc, z_depth_scale),
         ) = latents
         present_mask = torch.gt(z_present, self.z_present_eps)
-        z_what_loc = torch.where(present_mask, z_what_loc, self.empty_loc)
-        z_what_scale = torch.where(present_mask, z_what_scale, self.empty_scale)
+        what_present_mask = torch.hstack(  # consider background
+            (present_mask, torch.tensor([True]).expand(present_mask.shape[0], 1, 1))
+        )
+        z_what_loc = torch.where(what_present_mask, z_what_loc, self.empty_loc)
+        z_what_scale = torch.where(what_present_mask, z_what_scale, self.empty_scale)
         z_where = torch.where(present_mask, z_where, self.empty_loc)
         z_depth_loc = torch.where(present_mask, z_depth_loc, self.empty_loc)
         z_depth_scale = torch.where(present_mask, z_depth_scale, self.empty_scale)
@@ -259,8 +224,7 @@ class Encoder(nn.Module):
             z_present,
             (z_depth_loc, z_depth_scale),
         )
-        latents_bg = self.append_bg_latents(latents)
-        padded_latents = self.pad_latents(latents_bg)
+        padded_latents = self.pad_latents(latents)
         return self.reset_non_present(padded_latents)
 
 
@@ -286,7 +250,9 @@ class Decoder(nn.Module):
         self.what_dec = WhatDecoder(z_what_size=z_what_size).requires_grad_(train_what)
         self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
         self.drop = drop_empty
-        self.register_buffer("empty_obj_const", torch.tensor(-1000.0))
+        self.register_buffer("bg_depth", torch.zeros(1))
+        self.register_buffer("bg_present", torch.ones(1))
+        self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
         self.pixel_means = ssd.backbone.PIXEL_MEANS
         self.pixel_stds = ssd.backbone.PIXEL_STDS
 
@@ -295,7 +261,8 @@ class Decoder(nn.Module):
         """Using number of objects in chunks create indices
         .. so that every chunk is padded to the same dimension.
 
-        .. Assumes index 0 refers to "starter" (empty) object, added to every chunk.
+        .. Assumes index 0 refers to "starter" (empty) object
+        .. Puts background index at the beginning of indices arange
 
         :param n_present: number of objects in each chunk
         :return: indices for padding tensors
@@ -306,8 +273,17 @@ class Decoder(nn.Module):
         for chunk_objects in n_present:
             start_idx = end_idx
             end_idx = end_idx + chunk_objects
-            idx_range = torch.arange(
-                start=start_idx, end=end_idx, dtype=torch.long, device=n_present.device
+            idx_range = torch.cat(
+                (
+                    torch.tensor([end_idx - 1], dtype=torch.long),
+                    torch.arange(
+                        start=start_idx,
+                        end=end_idx - 1,
+                        dtype=torch.long,
+                        device=n_present.device,
+                    ),
+                ),
+                dim=0,
             )
             indices.append(
                 functional.pad(idx_range, pad=[0, max_objects - chunk_objects])
@@ -371,6 +347,7 @@ class Decoder(nn.Module):
         z_what_shape = z_what.shape
         z_where_shape = z_where.shape
         z_depth_shape = z_depth.shape
+        print(z_what_shape, z_where_shape, z_depth_shape)
         if self.drop:
             present_mask = torch.eq(z_present, 1)
             n_present = torch.sum(present_mask, dim=1).squeeze(-1)
@@ -399,7 +376,7 @@ class Decoder(nn.Module):
                 self.where_stn.image_size,
                 self.where_stn.image_size,
             )
-            depths = z_depth.where(z_present == 1.0, self.empty_obj_const)
+            depths = z_depth.where(z_present == 1.0, -float("inf"))
         return reconstructions, depths
 
     def forward(
@@ -410,16 +387,26 @@ class Decoder(nn.Module):
         .. (batch_size x channels x image_size x image_size)
         """
         z_what, z_where, z_present, z_depth = latents
+        batch_size = z_where.shape[0]
+        z_depth = torch.cat(  # append background depth
+            (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
+        )
+        z_present = torch.cat(  # append background present
+            (z_present, self.bg_present.expand(batch_size, 1, 1)), dim=1
+        )
+        z_where = torch.cat(  # append background where
+            (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
+        )
         # render reconstructions
         reconstructions, depths = self.reconstruct_objects(
             z_what, z_where, z_present, z_depth
         )
         # merge reconstructions
-        objects, object_weights = reconstructions[:, :-1], depths[:, :-1]
+        objects, object_weights = reconstructions[:, 1:], depths[:, 1:]
         merged = self.merge_reconstructions(
             reconstructions=objects, weights=object_weights
         )
-        output = self.fill_background(merged=merged, backgrounds=reconstructions[:, -1])
+        output = self.fill_background(merged=merged, backgrounds=reconstructions[:, 0])
         return output
 
 
@@ -936,24 +923,24 @@ class SSDIR(pl.LightningModule):
         batch_size = x.shape[0]
 
         with pyro.plate("data", batch_size):
-            z_what_loc = x.new_zeros(
+            z_what_loc = x.new_zeros(  # with background
                 batch_size, self.n_ssd_features + 1, self.z_what_size
             )
             z_what_scale = torch.ones_like(z_what_loc)
 
             z_where_loc = x.new_tensor(self.z_where_loc_prior).expand(
-                (batch_size, self.n_ssd_features + 1, 4)
+                (batch_size, self.n_ssd_features, 4)
             )
             z_where_scale = x.new_tensor(self.z_where_scale_prior).expand(
-                (batch_size, self.n_ssd_features + 1, 4)
+                (batch_size, self.n_ssd_features, 4)
             )
 
             z_present_p = x.new_full(
-                (batch_size, self.n_ssd_features + 1, 1),
+                (batch_size, self.n_ssd_features, 1),
                 fill_value=self.z_present_p_prior,
             )
 
-            z_depth_loc = x.new_zeros((batch_size, self.n_ssd_features + 1, 1))
+            z_depth_loc = x.new_zeros((batch_size, self.n_ssd_features, 1))
             z_depth_scale = torch.ones_like(z_depth_loc)
 
             with poutine.scale(scale=self.what_coef):
