@@ -351,10 +351,19 @@ class Decoder(nn.Module):
         z_depth: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Render reconstructions and their depths from batch."""
+        batch_size = z_what.shape[0]
         z_what_shape = z_what.shape
         z_where_shape = z_where.shape
         z_depth_shape = z_depth.shape
-        print(z_what_shape, z_where_shape, z_depth_shape)
+        z_depth = torch.cat(  # append background depth
+            (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
+        )
+        z_present = torch.cat(  # append background present
+            (z_present, self.bg_present.expand(batch_size, 1, 1)), dim=1
+        )
+        z_where = torch.cat(  # append background where
+            (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
+        )
         if self.drop:
             present_mask = torch.eq(z_present, 1)
             n_present = torch.sum(present_mask, dim=1).squeeze(-1)
@@ -395,15 +404,6 @@ class Decoder(nn.Module):
         """
         z_what, z_where, z_present, z_depth = latents
         batch_size = z_where.shape[0]
-        z_depth = torch.cat(  # append background depth
-            (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
-        )
-        z_present = torch.cat(  # append background present
-            (z_present, self.bg_present.expand(batch_size, 1, 1)), dim=1
-        )
-        z_where = torch.cat(  # append background where
-            (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
-        )
         # render reconstructions
         reconstructions, depths = self.reconstruct_objects(
             z_what, z_where, z_present, z_depth
