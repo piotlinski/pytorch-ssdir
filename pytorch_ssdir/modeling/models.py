@@ -343,28 +343,6 @@ class Decoder(nn.Module):
         return images, z_depth
 
     @staticmethod
-    def merge_reconstructions_masked(
-        reconstructions: torch.Tensor, weights: torch.Tensor
-    ) -> torch.Tensor:
-        """Combine decoded images into one by masked merging."""
-        sorted_weights, sort_index = torch.sort(weights, dim=1, descending=True)
-        sorted_reconstructions = (
-            reconstructions.gather(
-                dim=1,
-                index=sort_index.view(*sort_index.shape, 1, 1, 1).expand_as(
-                    reconstructions
-                ),
-            )
-            .permute(1, 0, 2, 3, 4)
-            .contiguous()
-        )
-        outputs = sorted_reconstructions[0]
-        for instance_batch in sorted_reconstructions[1:]:
-            mask = torch.where(outputs < 1e-3, 1.0, 0.0)
-            outputs = outputs + instance_batch * mask
-        return outputs.clamp_(0.0, 1.0)
-
-    @staticmethod
     def merge_reconstructions(
         reconstructions: torch.Tensor, weights: torch.Tensor
     ) -> torch.Tensor:
