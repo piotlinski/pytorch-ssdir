@@ -185,7 +185,7 @@ class Encoder(nn.Module):
         what_present_mask = torch.hstack(  # consider background
             (
                 present_mask,
-                present_mask.new_full(1, fill_value=True).expand(
+                present_mask.new_full((1,), fill_value=True).expand(
                     present_mask.shape[0], 1, 1
                 ),
             )
