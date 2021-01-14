@@ -183,7 +183,12 @@ class Encoder(nn.Module):
         ) = latents
         present_mask = torch.gt(z_present, self.z_present_eps)
         what_present_mask = torch.hstack(  # consider background
-            (present_mask, torch.tensor([True]).expand(present_mask.shape[0], 1, 1))
+            (
+                present_mask,
+                present_mask.new_full(1, fill_value=True).expand(
+                    present_mask.shape[0], 1, 1
+                ),
+            )
         )
         z_what_loc = torch.where(what_present_mask, z_what_loc, self.empty_loc)
         z_what_scale = torch.where(what_present_mask, z_what_scale, self.empty_scale)
@@ -275,7 +280,9 @@ class Decoder(nn.Module):
             end_idx = end_idx + chunk_objects
             idx_range = torch.cat(
                 (
-                    torch.tensor([end_idx - 1], dtype=torch.long),
+                    torch.tensor(
+                        [end_idx - 1], dtype=torch.long, device=n_present.device
+                    ),
                     torch.arange(
                         start=start_idx,
                         end=end_idx - 1,
