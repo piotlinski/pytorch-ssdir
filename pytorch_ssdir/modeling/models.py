@@ -392,7 +392,9 @@ class Decoder(nn.Module):
                 self.where_stn.image_size,
                 self.where_stn.image_size,
             )
-            depths = z_depth.where(z_present == 1.0, -float("inf"))
+            depths = z_depth.where(
+                z_present == 1.0, z_depth.new_full((1,), fill_value=-float("inf"))
+            )
         return reconstructions, depths
 
     def forward(
