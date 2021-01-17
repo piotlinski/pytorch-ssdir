@@ -1305,6 +1305,7 @@ class SSDIR(pl.LightningModule):
                 "scheduler": lr_scheduler,
                 "interval": "step",
             }
+        return configuration
 
     def train_dataloader(self) -> DataLoader:
         """Prepare train dataloader."""
