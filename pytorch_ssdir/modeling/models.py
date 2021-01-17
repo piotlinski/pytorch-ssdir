@@ -1293,7 +1293,9 @@ class SSDIR(pl.LightningModule):
         else:
             optimizer_params = self.parameters()
 
-        optimizer = self.optimizer(optimizer_params, lr=self.lr, **self.optimizer_args)
+        optimizer = self.optimizer(
+            optimizer_params, lr=self.lr, **self.optimizer_kwargs
+        )
         configuration = {"optimizer": optimizer}
         if self.lr_scheduler is not None:
             lr_scheduler = self.lr_scheduler(
