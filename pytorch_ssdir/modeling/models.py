@@ -13,6 +13,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
+import torch.optim
 import wandb
 from pyro.infer import Trace_ELBO
 from pytorch_ssd.args import str2bool
@@ -23,6 +24,7 @@ from pytorch_ssd.modeling.visualize import denormalize
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.utils.data.dataloader import DataLoader
 
+from pytorch_ssdir.args import parse_kwargs
 from pytorch_ssdir.modeling.depth import DepthEncoder
 from pytorch_ssdir.modeling.present import PresentEncoder
 from pytorch_ssdir.modeling.what import WhatDecoder, WhatEncoder
@@ -34,6 +36,17 @@ warnings.filterwarnings(
     "ignore",
     message="^.* was not registered in the param store because requires_grad=False",
 )
+
+optimizers = {"Adam": torch.optim.Adam, "SGD": torch.optim.SGD}
+lr_schedulers = {
+    "StepLR": torch.optim.lr_scheduler.StepLR,
+    "MultiStepLR": torch.optim.lr_scheduler.MultiStepLR,
+    "ExponentialLR": torch.optim.lr_scheduler.ExponentialLR,
+    "CosineAnnealingLR": torch.optim.lr_scheduler.CosineAnnealingLR,
+    "ReduceLROnPlateau": torch.optim.lr_scheduler.ReduceLROnPlateau,
+    "CyclicLR": torch.optim.lr_scheduler.CyclicLR,
+    "CosineAnnealingWarmRestarts": torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
+}
 
 
 class Encoder(nn.Module):
@@ -425,11 +438,12 @@ class SSDIR(pl.LightningModule):
     def __init__(
         self,
         ssd_model: SSD,
+        optimizer: str = "Adam",
+        optimizer_kwargs: Optional[List[Tuple[str, Any]]] = None,
         learning_rate: float = 1e-3,
-        momentum: float = 0.9,
         ssd_lr_multiplier: float = 1.0,
-        warm_restart_epochs: float = 1 / 3,
-        warm_restart_len_mult: int = 2,
+        lr_scheduler: str = "",
+        lr_scheduler_kwargs: Optional[List[Tuple[str, Any]]] = None,
         auto_lr_find: bool = False,
         batch_size: int = 32,
         num_workers: int = 8,
@@ -467,11 +481,12 @@ class SSDIR(pl.LightningModule):
     ):
         """
         :param ssd_model: trained SSD to use as backbone
+        :param optimizer: optimizer name
         :param learning_rate: learning rate
-        :param momentum: SGD momentum
+        :param optimizer_kwargs: optimizer argumnets dictionary
         :param ssd_lr_multiplier: ssd learning rate multiplier (learning rate * mult)
-        :param warm_restart_epochs: number of epochs before resetting learning rate
-        :param warm_restart_len_mult: coef to multiply number of epochs after each reset
+        :param lr_scheduler: LR scheduler name
+        :param lr_scheduler_kwargs: LR scheduler arguments dictionary
         :param auto_lr_find: perform auto lr finding
         :param batch_size: mini-batch size for training
         :param num_workers: number of workers for dataloader
@@ -529,11 +544,16 @@ class SSDIR(pl.LightningModule):
             train_what=train_what,
         )
 
+        self.optimizer = optimizers[optimizer]
+        if optimizer_kwargs is None:
+            optimizer_kwargs = []
+        self.optimizer_kwargs = dict(optimizer_kwargs)
         self.lr = learning_rate
-        self.momentum = momentum
         self.ssd_lr_multiplier = ssd_lr_multiplier
-        self.warm_restart_epochs = warm_restart_epochs
-        self.warm_restart_len_mult = warm_restart_len_mult
+        self.lr_scheduler = lr_schedulers.get(lr_scheduler)
+        if lr_scheduler_kwargs is None:
+            lr_scheduler_kwargs = []
+        self.lr_scheduler_kwargs = dict(lr_scheduler_kwargs)
         self.auto_lr_find = auto_lr_find
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -601,16 +621,23 @@ class SSDIR(pl.LightningModule):
             "--data_dir", type=str, default="data", help="Dataset files directory"
         )
         parser.add_argument(
+            "--optimizer",
+            type=str,
+            default="Adam",
+            help=f"Used optimizer. Available: {list(optimizers.keys())}",
+        )
+        parser.add_argument(
+            "--optimizer_kwargs",
+            type=parse_kwargs,
+            default=[],
+            nargs="*",
+            help="Optimizer kwargs in the form of key=value separated by spaces",
+        )
+        parser.add_argument(
             "--learning_rate",
             type=float,
             default=1e-3,
             help="Learning rate used for training the model",
-        )
-        parser.add_argument(
-            "--momentum",
-            type=float,
-            default=0.9,
-            help="Momentum used for training the model with SGD",
         )
         parser.add_argument(
             "--ssd_lr_multiplier",
@@ -619,16 +646,20 @@ class SSDIR(pl.LightningModule):
             help="Learning rate multiplier for training SSD backbone",
         )
         parser.add_argument(
-            "--warm_restart_epochs",
-            type=float,
-            default=1 / 3,
-            help="Number of epochs after which a warm restart is performed",
+            "--lr_scheduler",
+            type=str,
+            default="None",
+            help=(
+                "Used LR scheduler. "
+                f"Available: {list(lr_schedulers.keys())}; default: None"
+            ),
         )
         parser.add_argument(
-            "--warm_restart_len_mult",
-            type=int,
-            default=2,
-            help="Coef to multiply warm restart epochs after each restart",
+            "--lr_scheduler_kwargs",
+            type=parse_kwargs,
+            default=[],
+            nargs="*",
+            help="LR scheduler kwargs in the form of key=value separated by spaces",
         )
         parser.add_argument(
             "--batch_size",
@@ -1251,10 +1282,6 @@ class SSDIR(pl.LightningModule):
 
     def configure_optimizers(self):
         """Configure training optimizer."""
-        warm_restart_steps = int(
-            len(self.train_dataloader()) * self.warm_restart_epochs
-        )
-
         if self.ssd_lr_multiplier != 1:
             optimizer_params = [
                 {"params": self.filtered_parameters(exclude="ssd")},
@@ -1266,18 +1293,16 @@ class SSDIR(pl.LightningModule):
         else:
             optimizer_params = self.parameters()
 
-        optimizer = torch.optim.SGD(
-            optimizer_params, lr=self.lr, momentum=self.momentum
-        )
-        lr_scheduler = CosineAnnealingWarmRestarts(
-            optimizer=optimizer,
-            T_0=warm_restart_steps,
-            T_mult=self.warm_restart_len_mult,
-        )
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {"scheduler": lr_scheduler, "interval": "step"},
-        }
+        optimizer = self.optimizer(optimizer_params, lr=self.lr, **self.optimizer_args)
+        configuration = {"optimizer": optimizer}
+        if self.lr_scheduler is not None:
+            lr_scheduler = self.lr_scheduler(
+                optimizer=optimizer, **self.lr_scheduler_kwargs
+            )
+            configuration["lr_scheduler"] = {
+                "scheduler": lr_scheduler,
+                "interval": "step",
+            }
 
     def train_dataloader(self) -> DataLoader:
         """Prepare train dataloader."""
