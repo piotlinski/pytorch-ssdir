@@ -406,6 +406,10 @@ class Decoder(nn.Module):
             depths = z_depth.where(
                 z_present == 1.0, z_depth.new_full((1,), fill_value=-float("inf"))
             )
+            reconstructions = torch.cat(
+                (reconstructions[:, -1], reconstructions[:, :-1])
+            )
+            depths = torch.cat((depths[:, -1], depths[:, :-1]))
         return reconstructions, depths
 
     def forward(
