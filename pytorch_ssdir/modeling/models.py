@@ -13,7 +13,6 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-import torch.optim
 import wandb
 from pyro.infer import Trace_ELBO
 from pytorch_ssd.args import str2bool
@@ -21,7 +20,6 @@ from pytorch_ssd.data.datasets import datasets
 from pytorch_ssd.data.transforms import DataTransform, TrainDataTransform
 from pytorch_ssd.modeling.model import SSD
 from pytorch_ssd.modeling.visualize import denormalize
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.utils.data.dataloader import DataLoader
 
 from pytorch_ssdir.args import parse_kwargs
@@ -365,9 +363,6 @@ class Decoder(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Render reconstructions and their depths from batch."""
         batch_size = z_what.shape[0]
-        z_what_shape = z_what.shape
-        z_where_shape = z_where.shape
-        z_depth_shape = z_depth.shape
         z_depth = torch.cat(  # append background depth
             (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
         )
@@ -377,6 +372,9 @@ class Decoder(nn.Module):
         z_where = torch.cat(  # append background where
             (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
         )
+        z_what_shape = z_what.shape
+        z_where_shape = z_where.shape
+        z_depth_shape = z_depth.shape
         if self.drop:
             present_mask = torch.eq(z_present, 1)
             n_present = torch.sum(present_mask, dim=1).squeeze(-1)
@@ -387,8 +385,8 @@ class Decoder(nn.Module):
             z_depth = z_depth[present_mask.expand_as(z_depth)].view(
                 -1, z_depth_shape[-1]
             )
-        z_what_flat = z_what.view(-1, z_what.shape[-1])
-        z_where_flat = z_where.view(-1, z_where.shape[-1])
+        z_what_flat = z_what.view(-1, z_what_shape[-1])
+        z_where_flat = z_where.view(-1, z_where_shape[-1])
         decoded_images = self.what_dec(z_what_flat)
         transformed_images = self.where_stn(decoded_images, z_where_flat)
         if self.drop:
@@ -418,7 +416,6 @@ class Decoder(nn.Module):
         .. (batch_size x channels x image_size x image_size)
         """
         z_what, z_where, z_present, z_depth = latents
-        batch_size = z_where.shape[0]
         # render reconstructions
         reconstructions, depths = self.reconstruct_objects(
             z_what, z_where, z_present, z_depth
