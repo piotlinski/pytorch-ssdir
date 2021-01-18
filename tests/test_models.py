@@ -121,17 +121,23 @@ def test_pad_latents(ssd_model, n_ssd_features):
     n_features = sum(features ** 2 for features in ssd_model.backbone.feature_maps)
     encoder = Encoder(ssd=ssd_model)
     z_what_loc = (
-        torch.arange(n_features + 1).view(1, -1, 1).expand(1, n_features + 1, 4)
-    )
-    z_what_scale = (
-        torch.arange(n_features + 1, 2 * (n_features + 1))
+        torch.arange(n_features + 1, dtype=torch.float)
         .view(1, -1, 1)
         .expand(1, n_features + 1, 4)
     )
-    z_where = torch.zeros(1, n_ssd_features)
-    z_present = torch.zeros(1, n_ssd_features)
-    z_depth_loc = torch.arange(2 * n_features, 3 * n_features).view(1, -1, 1)
-    z_depth_scale = torch.arange(3 * n_features, 4 * n_features).view(1, -1, 1)
+    z_what_scale = (
+        torch.arange(n_features + 1, 2 * (n_features + 1), dtype=torch.float)
+        .view(1, -1, 1)
+        .expand(1, n_features + 1, 4)
+    )
+    z_where = torch.zeros(1, n_ssd_features, dtype=torch.float)
+    z_present = torch.zeros(1, n_ssd_features, dtype=torch.float)
+    z_depth_loc = torch.arange(2 * n_features, 3 * n_features, dtype=torch.float).view(
+        1, -1, 1
+    )
+    z_depth_scale = torch.arange(
+        3 * n_features, 4 * n_features, dtype=torch.float
+    ).view(1, -1, 1)
     (
         (new_z_what_loc, new_z_what_scale),
         _,
@@ -154,6 +160,50 @@ def test_pad_latents(ssd_model, n_ssd_features):
     assert torch.eq(new_z_depth_scale[0][628], new_z_depth_scale[0][629]).all()
     assert torch.eq(new_z_depth_loc[0][702], new_z_depth_loc[0][703]).all()
     assert torch.eq(new_z_depth_scale[0][850], new_z_depth_scale[0][851]).all()
+
+
+def test_reset_non_present(ssd_model):
+    """Verify if appropriate latents are reset in encoder."""
+    encoder = Encoder(ssd=ssd_model)
+    z_what_loc = torch.arange(1, 6, dtype=torch.float).view(1, -1, 1).expand(1, 5, 3)
+    z_what_scale = torch.arange(6, 11, dtype=torch.float).view(1, -1, 1).expand(1, 5, 3)
+    z_where = torch.arange(1, 5, dtype=torch.float).view(1, -1, 1).expand(1, 4, 4)
+    z_present = torch.tensor([1, 0, 0, 1], dtype=torch.float).view(1, -1, 1)
+    z_depth_loc = torch.arange(5, 9, dtype=torch.float).view(1, -1, 1)
+    z_depth_scale = torch.arange(9, 13, dtype=torch.float).view(1, -1, 1)
+    (
+        (reset_z_what_loc, reset_z_what_scale),
+        reset_z_where,
+        reset_z_present,
+        (reset_z_depth_loc, reset_z_depth_scale),
+    ) = encoder.reset_non_present(
+        (
+            (z_what_loc, z_what_scale),
+            z_where,
+            z_present,
+            (z_depth_loc, z_depth_scale),
+        )
+    )
+    assert torch.eq(reset_z_what_loc[0][0], z_what_loc[0][0]).all()
+    assert torch.eq(reset_z_what_loc[0][3], z_what_loc[0][3]).all()
+    assert torch.eq(reset_z_what_scale[0][0], z_what_scale[0][0]).all()
+    assert torch.eq(reset_z_what_scale[0][3], z_what_scale[0][3]).all()
+    assert torch.eq(reset_z_where[0][0], z_where[0][0]).all()
+    assert torch.eq(reset_z_where[0][3], z_where[0][3]).all()
+    assert torch.eq(reset_z_depth_loc[0][0], z_depth_loc[0][0]).all()
+    assert torch.eq(reset_z_depth_loc[0][3], z_depth_loc[0][3]).all()
+    assert torch.eq(reset_z_depth_scale[0][0], z_depth_scale[0][0]).all()
+    assert torch.eq(reset_z_depth_scale[0][3], z_depth_scale[0][3]).all()
+    assert (reset_z_what_loc[0][1] == reset_z_what_loc[0][2]).all()
+    assert (reset_z_what_loc[0][1] == encoder.empty_loc).all()
+    assert (reset_z_what_scale[0][1] == reset_z_what_scale[0][2]).all()
+    assert (reset_z_what_scale[0][1] == encoder.empty_scale).all()
+    assert (reset_z_where[0][1] == reset_z_where[0][2]).all()
+    assert (reset_z_where[0][1] == encoder.empty_loc).all()
+    assert (reset_z_depth_loc[0][1] == reset_z_depth_loc[0][2]).all()
+    assert (reset_z_depth_loc[0][1] == encoder.empty_loc).all()
+    assert (reset_z_depth_scale[0][1] == reset_z_depth_scale[0][2]).all()
+    assert (reset_z_depth_scale[0][1] == encoder.empty_scale).all()
 
 
 @pytest.mark.parametrize(
