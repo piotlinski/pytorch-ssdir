@@ -308,7 +308,7 @@ class Decoder(nn.Module):
             )
         return torch.cat(indices)
 
-    def _pad_reconstructions(
+    def pad_reconstructions(
         self,
         transformed_images: torch.Tensor,
         z_depth: torch.Tensor,
@@ -390,7 +390,7 @@ class Decoder(nn.Module):
         decoded_images = self.what_dec(z_what_flat)
         transformed_images = self.where_stn(decoded_images, z_where_flat)
         if self.drop:
-            reconstructions, depths = self._pad_reconstructions(
+            reconstructions, depths = self.pad_reconstructions(
                 transformed_images=transformed_images,
                 z_depth=z_depth,
                 n_present=n_present,

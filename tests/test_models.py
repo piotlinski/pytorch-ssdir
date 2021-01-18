@@ -147,19 +147,19 @@ def test_pad_latents(ssd_model, n_ssd_features):
         ((z_what_loc, z_what_scale), z_where, z_present, (z_depth_loc, z_depth_scale))
     )
     assert new_z_what_loc.shape == new_z_what_scale.shape == (1, n_ssd_features + 1, 4)
-    assert torch.eq(new_z_what_loc[0][0], new_z_what_loc[0][1]).all()
-    assert torch.eq(new_z_what_scale[0][2], new_z_what_scale[0][3]).all()
-    assert torch.eq(new_z_what_loc[0][8], new_z_what_loc[0][9]).all()
-    assert torch.eq(new_z_what_scale[0][16], new_z_what_scale[0][17]).all()
-    assert torch.eq(new_z_what_loc[0][400], new_z_what_loc[0][401]).all()
-    assert torch.eq(new_z_what_scale[0][562], new_z_what_scale[0][563]).all()
+    assert torch.equal(new_z_what_loc[0][0], new_z_what_loc[0][1])
+    assert torch.equal(new_z_what_scale[0][2], new_z_what_scale[0][3])
+    assert torch.equal(new_z_what_loc[0][8], new_z_what_loc[0][9])
+    assert torch.equal(new_z_what_scale[0][16], new_z_what_scale[0][17])
+    assert torch.equal(new_z_what_loc[0][400], new_z_what_loc[0][401])
+    assert torch.equal(new_z_what_scale[0][562], new_z_what_scale[0][563])
     assert new_z_depth_loc.shape == new_z_depth_scale.shape == (1, n_ssd_features, 1)
-    assert torch.eq(new_z_depth_loc[0][204], new_z_depth_loc[0][205]).all()
-    assert torch.eq(new_z_depth_scale[0][368], new_z_depth_scale[0][369]).all()
-    assert torch.eq(new_z_depth_loc[0][604], new_z_depth_loc[0][605]).all()
-    assert torch.eq(new_z_depth_scale[0][628], new_z_depth_scale[0][629]).all()
-    assert torch.eq(new_z_depth_loc[0][702], new_z_depth_loc[0][703]).all()
-    assert torch.eq(new_z_depth_scale[0][850], new_z_depth_scale[0][851]).all()
+    assert torch.equal(new_z_depth_loc[0][204], new_z_depth_loc[0][205])
+    assert torch.equal(new_z_depth_scale[0][368], new_z_depth_scale[0][369])
+    assert torch.equal(new_z_depth_loc[0][604], new_z_depth_loc[0][605])
+    assert torch.equal(new_z_depth_scale[0][628], new_z_depth_scale[0][629])
+    assert torch.equal(new_z_depth_loc[0][702], new_z_depth_loc[0][703])
+    assert torch.equal(new_z_depth_scale[0][850], new_z_depth_scale[0][851])
 
 
 def test_reset_non_present(ssd_model):
@@ -184,16 +184,16 @@ def test_reset_non_present(ssd_model):
             (z_depth_loc, z_depth_scale),
         )
     )
-    assert torch.eq(reset_z_what_loc[0][0], z_what_loc[0][0]).all()
-    assert torch.eq(reset_z_what_loc[0][3], z_what_loc[0][3]).all()
-    assert torch.eq(reset_z_what_scale[0][0], z_what_scale[0][0]).all()
-    assert torch.eq(reset_z_what_scale[0][3], z_what_scale[0][3]).all()
-    assert torch.eq(reset_z_where[0][0], z_where[0][0]).all()
-    assert torch.eq(reset_z_where[0][3], z_where[0][3]).all()
-    assert torch.eq(reset_z_depth_loc[0][0], z_depth_loc[0][0]).all()
-    assert torch.eq(reset_z_depth_loc[0][3], z_depth_loc[0][3]).all()
-    assert torch.eq(reset_z_depth_scale[0][0], z_depth_scale[0][0]).all()
-    assert torch.eq(reset_z_depth_scale[0][3], z_depth_scale[0][3]).all()
+    assert torch.equal(reset_z_what_loc[0][0], z_what_loc[0][0])
+    assert torch.equal(reset_z_what_loc[0][3], z_what_loc[0][3])
+    assert torch.equal(reset_z_what_scale[0][0], z_what_scale[0][0])
+    assert torch.equal(reset_z_what_scale[0][3], z_what_scale[0][3])
+    assert torch.equal(reset_z_where[0][0], z_where[0][0])
+    assert torch.equal(reset_z_where[0][3], z_where[0][3])
+    assert torch.equal(reset_z_depth_loc[0][0], z_depth_loc[0][0])
+    assert torch.equal(reset_z_depth_loc[0][3], z_depth_loc[0][3])
+    assert torch.equal(reset_z_depth_scale[0][0], z_depth_scale[0][0])
+    assert torch.equal(reset_z_depth_scale[0][3], z_depth_scale[0][3])
     assert (reset_z_what_loc[0][1] == reset_z_what_loc[0][2]).all()
     assert (reset_z_what_loc[0][1] == encoder.empty_loc).all()
     assert (reset_z_what_scale[0][1] == reset_z_what_scale[0][2]).all()
@@ -220,6 +220,33 @@ def test_pad_indices(n_present, expected):
     assert indices.shape == (n_present.shape[0] * (torch.max(n_present)),)
     assert torch.max(indices) == torch.sum(n_present)
     assert torch.equal(indices, expected)
+
+
+def test_pad_reconstructions(ssd_model):
+    """Verify padding reconstructions in Decoder."""
+    decoder = Decoder(ssd=ssd_model, z_what_size=4)
+    images = (
+        torch.arange(1, 5, dtype=torch.float)
+        .view(-1, 1, 1, 1)
+        .expand(4, 3, decoder.where_stn.image_size, decoder.where_stn.image_size)
+    )
+    z_depth = torch.arange(5, 9, dtype=torch.float).view(-1, 1)
+    n_present = torch.tensor([1, 3])
+    padded_images, padded_z_depth = decoder.pad_reconstructions(
+        transformed_images=images, z_depth=z_depth, n_present=n_present
+    )
+    assert padded_images.shape == (2, 3, 3, 300, 300)
+    assert padded_z_depth.shape == (2, 3)
+    assert torch.equal(padded_images[0][0], images[0])
+    assert torch.equal(padded_images[0][1], padded_images[0][2])
+    assert torch.equal(padded_images[1][0], images[3])
+    assert torch.equal(padded_images[1][1], images[1])
+    assert torch.equal(padded_images[1][2], images[2])
+    assert padded_z_depth[0][0] == z_depth[0]
+    assert padded_z_depth[0][1] == padded_z_depth[0][2] == -float("inf")
+    assert padded_z_depth[1][0] == z_depth[3]
+    assert padded_z_depth[1][1] == z_depth[1]
+    assert padded_z_depth[1][2] == z_depth[2]
 
 
 @pytest.mark.parametrize(
