@@ -116,6 +116,46 @@ def test_latents_indices(ssd_model, n_ssd_features):
     assert (torch.sort(indices)[0] == indices).all()
 
 
+def test_pad_latents(ssd_model, n_ssd_features):
+    """Verify if latents are padded appropriately."""
+    n_features = sum(features ** 2 for features in ssd_model.backbone.feature_maps)
+    encoder = Encoder(ssd=ssd_model)
+    z_what_loc = (
+        torch.arange(n_features + 1).view(1, -1, 1).expand(1, n_features + 1, 4)
+    )
+    z_what_scale = (
+        torch.arange(n_features + 1, 2 * (n_features + 1))
+        .view(1, -1, 1)
+        .expand(1, n_features + 1, 4)
+    )
+    z_where = torch.zeros(1, n_ssd_features)
+    z_present = torch.zeros(1, n_ssd_features)
+    z_depth_loc = torch.arange(2 * n_features, 3 * n_features).view(1, -1, 1)
+    z_depth_scale = torch.arange(3 * n_features, 4 * n_features).view(1, -1, 1)
+    (
+        (new_z_what_loc, new_z_what_scale),
+        _,
+        _,
+        (new_z_depth_loc, new_z_depth_scale),
+    ) = encoder.pad_latents(
+        ((z_what_loc, z_what_scale), z_where, z_present, (z_depth_loc, z_depth_scale))
+    )
+    assert new_z_what_loc.shape == new_z_what_scale.shape == (1, n_ssd_features + 1, 4)
+    assert torch.eq(new_z_what_loc[0][0], new_z_what_loc[0][1]).all()
+    assert torch.eq(new_z_what_scale[0][2], new_z_what_scale[0][3]).all()
+    assert torch.eq(new_z_what_loc[0][8], new_z_what_loc[0][9]).all()
+    assert torch.eq(new_z_what_scale[0][16], new_z_what_scale[0][17]).all()
+    assert torch.eq(new_z_what_loc[0][400], new_z_what_loc[0][401]).all()
+    assert torch.eq(new_z_what_scale[0][562], new_z_what_scale[0][563]).all()
+    assert new_z_depth_loc.shape == new_z_depth_scale.shape == (1, n_ssd_features, 1)
+    assert torch.eq(new_z_depth_loc[0][204], new_z_depth_loc[0][205]).all()
+    assert torch.eq(new_z_depth_scale[0][368], new_z_depth_scale[0][369]).all()
+    assert torch.eq(new_z_depth_loc[0][604], new_z_depth_loc[0][605]).all()
+    assert torch.eq(new_z_depth_scale[0][628], new_z_depth_scale[0][629]).all()
+    assert torch.eq(new_z_depth_loc[0][702], new_z_depth_loc[0][703]).all()
+    assert torch.eq(new_z_depth_scale[0][850], new_z_depth_scale[0][851]).all()
+
+
 @pytest.mark.parametrize(
     "n_present, expected",
     [
