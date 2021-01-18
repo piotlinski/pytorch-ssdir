@@ -271,6 +271,37 @@ def test_merge_reconstructions(inputs, weights, expected):
     assert torch.all(torch.le(torch.abs(merged - expected), 1e-3))
 
 
+def test_fill_background():
+    """Verify adding background to merged reconstructions."""
+    background_1 = torch.full((1, 3, 1, 2), fill_value=0.3)
+    background_2 = torch.full((1, 3, 1, 2), fill_value=0.7)
+    backgrounds = torch.cat((background_1, background_2), dim=0)
+    merged = torch.zeros((2, 3, 1, 2))
+    merged[0, 1, 0, 1] = 0.4
+    merged[1, 2, 0, 1] = 0.5
+    merged[0, 2, 0, 0] = 0.9
+    merged[1, 0, 0, 1] = 1.0
+    filled = Decoder.fill_background(merged, backgrounds)
+    assert filled[0, 1, 0, 1] == 0.4
+    assert filled[1, 2, 0, 1] == 0.5
+    assert filled[0, 2, 0, 0] == 0.9
+    assert filled[1, 0, 0, 1] == 1.0
+    assert (
+        filled[0, 0, 0, 0]
+        == filled[0, 0, 0, 1]
+        == filled[0, 1, 0, 0]
+        == filled[0, 2, 0, 1]
+        == 0.3
+    )
+    assert (
+        filled[1, 0, 0, 0]
+        == filled[1, 1, 0, 0]
+        == filled[1, 1, 0, 1]
+        == filled[1, 2, 0, 0]
+        == 0.7
+    )
+
+
 @pytest.mark.parametrize("batch_size", [2, 4, 8])
 def test_decoder_dimensions(batch_size, ssd_model, n_ssd_features):
     """Verify decoder output dimensions."""
