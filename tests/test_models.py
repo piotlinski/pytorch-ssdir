@@ -332,16 +332,22 @@ class WhereTransformerMock(torch.nn.Module):
         )
 
 
-def test_reconstruct_objects_drop(ssd_model):
-    """Verify if reconstructing objects is conducted correctly for drop decoder."""
-    decoder = Decoder(ssd=ssd_model, z_what_size=2, drop_empty=True)
-
+@pytest.fixture
+def sample_latents():
+    """Example latents for testing Decoder."""
     z_what = torch.arange(1, 9, dtype=torch.float).view(2, -1, 1).expand(2, 4, 4)
     z_where = (
         (torch.arange(3, 9, dtype=torch.float) / 10).view(2, -1, 1).expand(2, 3, 4)
     )
     z_present = torch.tensor([[1, 0, 1], [1, 0, 0]], dtype=torch.float).view(2, -1, 1)
     z_depth = torch.arange(7, 13, dtype=torch.float).view(2, -1, 1)
+    return z_what, z_where, z_present, z_depth
+
+
+def test_reconstruct_objects_drop(ssd_model, sample_latents):
+    """Verify if reconstructing objects is conducted correctly for drop decoder."""
+    decoder = Decoder(ssd=ssd_model, z_what_size=2, drop_empty=True)
+    z_what, z_where, z_present, z_depth = sample_latents
 
     decoder.what_dec = WhatDecoderMock(n_objects=5, z_what_size=4)
     decoder.where_stn = WhereTransformerMock(n_objects=5, image_size=2)
@@ -373,13 +379,73 @@ def test_reconstruct_objects_drop(ssd_model):
         reconstructions[0][0][0].view(4), z_what[0][3] * decoder.bg_where
     )
     assert torch.equal(reconstructions[0][1][0].view(4), z_what[0][0] * z_where[0][0])
+    assert depths[0][1] == z_depth[0][0]
     assert torch.equal(reconstructions[0][2][0].view(4), z_what[0][2] * z_where[0][2])
+    assert depths[0][2] == z_depth[0][2]
     assert torch.equal(
         reconstructions[1][0][0].view(4), z_what[1][3] * decoder.bg_where
     )
     assert torch.equal(reconstructions[1][1][0].view(4), z_what[1][0] * z_where[1][0])
+    assert depths[1][1] == z_depth[1][0]
     assert torch.eq(reconstructions[1][2][0].view(4), 0).all()
-    assert torch.eq(reconstructions[1][2][0].view(4), 0).all()
+    assert depths[1][2] == -float("inf")
+
+
+def test_reconstruct_objects_no_drop(ssd_model, sample_latents):
+    """Verify if reconstructing objects is conducted correctly for no-drop decoder."""
+    decoder = Decoder(ssd=ssd_model, z_what_size=2, drop_empty=False)
+    z_what, z_where, z_present, z_depth = sample_latents
+
+    decoder.what_dec = WhatDecoderMock(n_objects=8, z_what_size=4)
+    decoder.where_stn = WhereTransformerMock(n_objects=8, image_size=2)
+
+    def what_decoder_test_hook(module, input, output):
+        assert torch.eq(input[0][0], 1.0).all()
+        assert torch.eq(input[0][1], 2.0).all()
+        assert torch.eq(input[0][2], 3.0).all()
+        assert torch.eq(input[0][3], 4.0).all()
+        assert torch.eq(input[0][4], 5.0).all()
+        assert torch.eq(input[0][5], 6.0).all()
+        assert torch.eq(input[0][6], 7.0).all()
+        assert torch.eq(input[0][7], 8.0).all()
+
+    decoder.what_dec.register_forward_hook(what_decoder_test_hook)
+
+    def where_transformer_hook(module, input, output):
+        images, z_where_flat = input
+        assert torch.eq(z_where_flat[0], 0.3).all()
+        assert torch.eq(z_where_flat[1], 0.4).all()
+        assert torch.eq(z_where_flat[2], 0.5).all()
+        assert torch.equal(z_where_flat[3], decoder.bg_where)
+        assert torch.eq(z_where_flat[4], 0.6).all()
+        assert torch.eq(z_where_flat[5], 0.7).all()
+        assert torch.eq(z_where_flat[6], 0.8).all()
+        assert torch.equal(z_where_flat[7], decoder.bg_where)
+
+    decoder.where_stn.register_forward_hook(where_transformer_hook)
+
+    reconstructions, depths = decoder.reconstruct_objects(
+        z_what, z_where, z_present, z_depth
+    )
+
+    assert torch.equal(
+        reconstructions[0][0][0].view(4), z_what[0][3] * decoder.bg_where
+    )
+    assert torch.equal(reconstructions[0][1][0].view(4), z_what[0][0] * z_where[0][0])
+    assert depths[0][1] == z_depth[0][0]
+    assert torch.equal(reconstructions[0][2][0].view(4), z_what[0][1] * z_where[0][1])
+    assert depths[0][2] == -float("inf")
+    assert torch.equal(reconstructions[0][3][0].view(4), z_what[0][2] * z_where[0][2])
+    assert depths[0][3] == z_depth[0][2]
+    assert torch.equal(
+        reconstructions[1][0][0].view(4), z_what[1][3] * decoder.bg_where
+    )
+    assert torch.equal(reconstructions[1][1][0].view(4), z_what[1][0] * z_where[1][0])
+    assert depths[1][1] == z_depth[1][0]
+    assert torch.equal(reconstructions[1][2][0].view(4), z_what[1][1] * z_where[1][1])
+    assert depths[1][2] == -float("inf")
+    assert torch.equal(reconstructions[1][3][0].view(4), z_what[1][2] * z_where[1][2])
+    assert depths[1][3] == -float("inf")
 
 
 @pytest.mark.parametrize("batch_size", [2, 4, 8])
