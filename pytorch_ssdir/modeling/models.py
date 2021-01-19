@@ -1175,6 +1175,9 @@ class SSDIR(pl.LightningModule):
         images, boxes, _ = batch
         loss = criterion(self.model, self.guide, images)
 
+        if loss.isnan():
+            stage = f"NaN_{stage}"
+
         self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
             self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
@@ -1266,6 +1269,9 @@ class SSDIR(pl.LightningModule):
                     {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
+        if loss.is_nan():
+            print("Skipping training with this batch due to NaN loss.")
+            return None
 
         return loss
 
