@@ -1176,11 +1176,13 @@ class SSDIR(pl.LightningModule):
         loss = criterion(self.model, self.guide, images)
 
         if loss.isnan():
-            stage = f"NaN_{stage}"
+            prefix = "NaN_"
+        else:
+            prefix = ""
 
-        self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
+        self.log(f"{prefix}{stage}_loss", loss, prog_bar=False, logger=True)
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
-            self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
+            self.log(f"{prefix}{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
@@ -1196,7 +1198,7 @@ class SSDIR(pl.LightningModule):
 
                 self.logger.experiment.log(
                     {
-                        f"{stage}_mse": self.mse[stage](
+                        f"{prefix}{stage}_mse": self.mse[stage](
                             reconstructions.permute(0, 2, 3, 1),
                             denormalize(
                                 vis_images.permute(0, 2, 3, 1),
@@ -1237,7 +1239,7 @@ class SSDIR(pl.LightningModule):
                     )
                     self.logger.experiment.log(
                         {
-                            f"{stage}_inference_image": wandb.Image(
+                            f"{prefix}{stage}_inference_image": wandb.Image(
                                 inference_image,
                                 boxes=wandb_inference_boxes,
                                 caption="model inference",
@@ -1266,7 +1268,7 @@ class SSDIR(pl.LightningModule):
             }
             for latent_name, latent in latents_dict.items():
                 self.logger.experiment.log(
-                    {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
+                    {f"{prefix}{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
         if torch.isnan(loss):
