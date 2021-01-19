@@ -1269,7 +1269,7 @@ class SSDIR(pl.LightningModule):
                     {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
-        if loss.is_nan():
+        if torch.isnan(loss):
             print("Skipping training with this batch due to NaN loss.")
             return None
 
