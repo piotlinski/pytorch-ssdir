@@ -20,9 +20,9 @@ from pytorch_ssd.data.datasets import datasets
 from pytorch_ssd.data.transforms import DataTransform, TrainDataTransform
 from pytorch_ssd.modeling.model import SSD
 from pytorch_ssd.modeling.visualize import denormalize
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.utils.data.dataloader import DataLoader
 
+from pytorch_ssdir.args import parse_kwargs
 from pytorch_ssdir.modeling.depth import DepthEncoder
 from pytorch_ssdir.modeling.present import PresentEncoder
 from pytorch_ssdir.modeling.what import WhatDecoder, WhatEncoder
@@ -34,6 +34,17 @@ warnings.filterwarnings(
     "ignore",
     message="^.* was not registered in the param store because requires_grad=False",
 )
+
+optimizers = {"Adam": torch.optim.Adam, "SGD": torch.optim.SGD}
+lr_schedulers = {
+    "StepLR": torch.optim.lr_scheduler.StepLR,
+    "MultiStepLR": torch.optim.lr_scheduler.MultiStepLR,
+    "ExponentialLR": torch.optim.lr_scheduler.ExponentialLR,
+    "CosineAnnealingLR": torch.optim.lr_scheduler.CosineAnnealingLR,
+    "ReduceLROnPlateau": torch.optim.lr_scheduler.ReduceLROnPlateau,
+    "CyclicLR": torch.optim.lr_scheduler.CyclicLR,
+    "CosineAnnealingWarmRestarts": torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
+}
 
 
 class Encoder(nn.Module):
@@ -101,10 +112,6 @@ class Encoder(nn.Module):
                 boxes_per_loc=ssd.backbone.boxes_per_loc,
             ),
         )
-        self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
-        self.register_buffer("bg_present", torch.ones(1))
-        self.register_buffer("bg_depth_loc_eps", torch.tensor(0.1, dtype=torch.float))
-        self.register_buffer("bg_depth_scale", torch.tensor([0.01]))
         self.register_buffer("empty_loc", torch.tensor(0.0, dtype=torch.float))
         self.register_buffer("empty_scale", torch.tensor(1.0, dtype=torch.float))
 
@@ -117,50 +124,14 @@ class Encoder(nn.Module):
         .. Caters for the difference between z_what, z_depth and z_where, z_present.
         """
         indices = []
-        img_idx = last_img_idx = 0
+        idx = 0
         for feature_map, n_boxes in zip(feature_maps, boxes_per_loc):
             for feature_map_idx in range(feature_map ** 2):
-                img_idx = last_img_idx + feature_map_idx
                 indices.append(
-                    torch.full(size=(n_boxes,), fill_value=img_idx, dtype=torch.float)
+                    torch.full(size=(n_boxes,), fill_value=idx, dtype=torch.float)
                 )
-            last_img_idx = img_idx + 1
-        indices.append(
-            torch.full(size=(1,), fill_value=last_img_idx, dtype=torch.float)
-        )
+                idx += 1
         return torch.cat(indices, dim=0)
-
-    def append_bg_latents(
-        self,
-        latents: Tuple[
-            Tuple[torch.Tensor, torch.Tensor],
-            torch.Tensor,
-            torch.Tensor,
-            Tuple[torch.Tensor, torch.Tensor],
-        ],
-    ) -> Tuple[
-        Tuple[torch.Tensor, torch.Tensor],
-        torch.Tensor,
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-    ]:
-        """Add background latents to z_where, z_present and z_depth."""
-        z_what, z_where, z_present, (z_depth_loc, z_depth_scale) = latents
-        batch_size = z_what[0].shape[0]
-        where_bg = self.bg_where.expand(batch_size, 1, 4)
-        present_bg = self.bg_present.expand(batch_size, 1, 1)
-        min_depth_loc, _ = torch.min(z_depth_loc, dim=1)
-        depth_bg_loc = (min_depth_loc - self.bg_depth_loc_eps).view(batch_size, 1, 1)
-        depth_bg_scale = self.bg_depth_scale.expand(batch_size, 1, 1)
-        return (
-            z_what,
-            torch.cat((z_where, where_bg), dim=1),
-            torch.cat((z_present, present_bg), dim=1),
-            (
-                torch.cat((z_depth_loc, depth_bg_loc), dim=1),
-                torch.cat((z_depth_scale, depth_bg_scale), dim=1),
-            ),
-        )
 
     def pad_latents(
         self,
@@ -184,10 +155,12 @@ class Encoder(nn.Module):
             (z_depth_loc, z_depth_scale),
         ) = latents
         # repeat rows to match z_where and z_present
-        z_what_loc = z_what_loc.index_select(dim=1, index=self.indices.long())
-        z_what_scale = z_what_scale.index_select(dim=1, index=self.indices.long())
-        z_depth_loc = z_depth_loc.index_select(dim=1, index=self.indices.long())
-        z_depth_scale = z_depth_scale.index_select(dim=1, index=self.indices.long())
+        indices = self.indices.long()
+        what_indices = torch.hstack((indices, indices.max() + 1))  # consider background
+        z_what_loc = z_what_loc.index_select(dim=1, index=what_indices)
+        z_what_scale = z_what_scale.index_select(dim=1, index=what_indices)
+        z_depth_loc = z_depth_loc.index_select(dim=1, index=indices)
+        z_depth_scale = z_depth_scale.index_select(dim=1, index=indices)
         return (
             (z_what_loc, z_what_scale),
             z_where,
@@ -220,8 +193,16 @@ class Encoder(nn.Module):
             (z_depth_loc, z_depth_scale),
         ) = latents
         present_mask = torch.gt(z_present, self.z_present_eps)
-        z_what_loc = torch.where(present_mask, z_what_loc, self.empty_loc)
-        z_what_scale = torch.where(present_mask, z_what_scale, self.empty_scale)
+        what_present_mask = torch.hstack(  # consider background
+            (
+                present_mask,
+                present_mask.new_full((1,), fill_value=True).expand(
+                    present_mask.shape[0], 1, 1
+                ),
+            )
+        )
+        z_what_loc = torch.where(what_present_mask, z_what_loc, self.empty_loc)
+        z_what_scale = torch.where(what_present_mask, z_what_scale, self.empty_scale)
         z_where = torch.where(present_mask, z_where, self.empty_loc)
         z_depth_loc = torch.where(present_mask, z_depth_loc, self.empty_loc)
         z_depth_scale = torch.where(present_mask, z_depth_scale, self.empty_scale)
@@ -259,8 +240,7 @@ class Encoder(nn.Module):
             z_present,
             (z_depth_loc, z_depth_scale),
         )
-        latents_bg = self.append_bg_latents(latents)
-        padded_latents = self.pad_latents(latents_bg)
+        padded_latents = self.pad_latents(latents)
         return self.reset_non_present(padded_latents)
 
 
@@ -280,15 +260,15 @@ class Decoder(nn.Module):
         ssd: SSD,
         z_what_size: int = 64,
         drop_empty: bool = True,
-        weighted_merge: bool = False,
         train_what: bool = True,
     ):
         super().__init__()
         self.what_dec = WhatDecoder(z_what_size=z_what_size).requires_grad_(train_what)
         self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
         self.drop = drop_empty
-        self.weighted = weighted_merge
-        self.register_buffer("empty_obj_const", torch.tensor(-1000.0))
+        self.register_buffer("bg_depth", torch.zeros(1))
+        self.register_buffer("bg_present", torch.ones(1))
+        self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
         self.pixel_means = ssd.backbone.PIXEL_MEANS
         self.pixel_stds = ssd.backbone.PIXEL_STDS
 
@@ -297,7 +277,8 @@ class Decoder(nn.Module):
         """Using number of objects in chunks create indices
         .. so that every chunk is padded to the same dimension.
 
-        .. Assumes index 0 refers to "starter" (empty) object, added to every chunk.
+        .. Assumes index 0 refers to "starter" (empty) object
+        .. Puts background index at the beginning of indices arange
 
         :param n_present: number of objects in each chunk
         :return: indices for padding tensors
@@ -308,15 +289,26 @@ class Decoder(nn.Module):
         for chunk_objects in n_present:
             start_idx = end_idx
             end_idx = end_idx + chunk_objects
-            idx_range = torch.arange(
-                start=start_idx, end=end_idx, dtype=torch.long, device=n_present.device
+            idx_range = torch.cat(
+                (
+                    torch.tensor(
+                        [end_idx - 1], dtype=torch.long, device=n_present.device
+                    ),
+                    torch.arange(
+                        start=start_idx,
+                        end=end_idx - 1,
+                        dtype=torch.long,
+                        device=n_present.device,
+                    ),
+                ),
+                dim=0,
             )
             indices.append(
                 functional.pad(idx_range, pad=[0, max_objects - chunk_objects])
             )
         return torch.cat(indices)
 
-    def _pad_reconstructions(
+    def pad_reconstructions(
         self,
         transformed_images: torch.Tensor,
         z_depth: torch.Tensor,
@@ -345,29 +337,7 @@ class Decoder(nn.Module):
         return images, z_depth
 
     @staticmethod
-    def merge_reconstructions_masked(
-        reconstructions: torch.Tensor, weights: torch.Tensor
-    ) -> torch.Tensor:
-        """Combine decoded images into one by masked merging."""
-        sorted_weights, sort_index = torch.sort(weights, dim=1, descending=True)
-        sorted_reconstructions = (
-            reconstructions.gather(
-                dim=1,
-                index=sort_index.view(*sort_index.shape, 1, 1, 1).expand_as(
-                    reconstructions
-                ),
-            )
-            .permute(1, 0, 2, 3, 4)
-            .contiguous()
-        )
-        outputs = sorted_reconstructions[0]
-        for instance_batch in sorted_reconstructions[1:]:
-            mask = torch.where(outputs < 1e-3, 1.0, 0.0)
-            outputs = outputs + instance_batch * mask
-        return outputs.clamp_(0.0, 1.0)
-
-    @staticmethod
-    def merge_reconstructions_weighted(
+    def merge_reconstructions(
         reconstructions: torch.Tensor, weights: torch.Tensor
     ) -> torch.Tensor:
         """Combine decoder images into one by weighted sum."""
@@ -375,6 +345,14 @@ class Decoder(nn.Module):
             *weights.shape[:2], 1, 1, 1
         )
         return torch.sum(weighted_images, dim=1)
+
+    @staticmethod
+    def fill_background(
+        merged: torch.Tensor, backgrounds: torch.Tensor
+    ) -> torch.Tensor:
+        """Fill merged images background with background reconstruction."""
+        mask = torch.where(merged < 1e-3, 1.0, 0.0)
+        return merged + backgrounds * mask
 
     def reconstruct_objects(
         self,
@@ -384,6 +362,16 @@ class Decoder(nn.Module):
         z_depth: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Render reconstructions and their depths from batch."""
+        batch_size = z_what.shape[0]
+        z_depth = torch.cat(  # append background depth
+            (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
+        )
+        z_present = torch.cat(  # append background present
+            (z_present, self.bg_present.expand(batch_size, 1, 1)), dim=1
+        )
+        z_where = torch.cat(  # append background where
+            (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
+        )
         z_what_shape = z_what.shape
         z_where_shape = z_where.shape
         z_depth_shape = z_depth.shape
@@ -397,12 +385,12 @@ class Decoder(nn.Module):
             z_depth = z_depth[present_mask.expand_as(z_depth)].view(
                 -1, z_depth_shape[-1]
             )
-        z_what_flat = z_what.view(-1, z_what.shape[-1])
-        z_where_flat = z_where.view(-1, z_where.shape[-1])
+        z_what_flat = z_what.view(-1, z_what_shape[-1])
+        z_where_flat = z_where.view(-1, z_where_shape[-1])
         decoded_images = self.what_dec(z_what_flat)
         transformed_images = self.where_stn(decoded_images, z_where_flat)
         if self.drop:
-            reconstructions, depths = self._pad_reconstructions(
+            reconstructions, depths = self.pad_reconstructions(
                 transformed_images=transformed_images,
                 z_depth=z_depth,
                 n_present=n_present,
@@ -415,7 +403,13 @@ class Decoder(nn.Module):
                 self.where_stn.image_size,
                 self.where_stn.image_size,
             )
-            depths = z_depth.where(z_present == 1.0, self.empty_obj_const)
+            depths = z_depth.where(
+                z_present == 1.0, z_depth.new_full((1,), fill_value=-float("inf"))
+            )
+            reconstructions = torch.cat(
+                (reconstructions[:, [-1]], reconstructions[:, :-1]), dim=1
+            )
+            depths = torch.cat((depths[:, [-1]], depths[:, :-1]), dim=1)
         return reconstructions, depths
 
     def forward(
@@ -431,14 +425,11 @@ class Decoder(nn.Module):
             z_what, z_where, z_present, z_depth
         )
         # merge reconstructions
-        if self.weighted:
-            output = self.merge_reconstructions_weighted(
-                reconstructions=reconstructions, weights=depths
-            )
-        else:
-            output = self.merge_reconstructions_masked(
-                reconstructions=reconstructions, weights=depths
-            )
+        objects, object_weights = reconstructions[:, 1:], depths[:, 1:]
+        merged = self.merge_reconstructions(
+            reconstructions=objects, weights=object_weights
+        )
+        output = self.fill_background(merged=merged, backgrounds=reconstructions[:, 0])
         return output
 
 
@@ -448,11 +439,12 @@ class SSDIR(pl.LightningModule):
     def __init__(
         self,
         ssd_model: SSD,
+        optimizer: str = "Adam",
+        optimizer_kwargs: Optional[List[Tuple[str, Any]]] = None,
         learning_rate: float = 1e-3,
-        momentum: float = 0.9,
         ssd_lr_multiplier: float = 1.0,
-        warm_restart_epochs: float = 1 / 3,
-        warm_restart_len_mult: int = 2,
+        lr_scheduler: str = "",
+        lr_scheduler_kwargs: Optional[List[Tuple[str, Any]]] = None,
         auto_lr_find: bool = False,
         batch_size: int = 32,
         num_workers: int = 8,
@@ -468,7 +460,6 @@ class SSDIR(pl.LightningModule):
         z_where_scale_const: float = 0.05,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
-        weighted_merge: bool = False,
         normalize_elbo: bool = False,
         what_coef: float = 1.0,
         where_coef: float = 1.0,
@@ -491,11 +482,12 @@ class SSDIR(pl.LightningModule):
     ):
         """
         :param ssd_model: trained SSD to use as backbone
+        :param optimizer: optimizer name
         :param learning_rate: learning rate
-        :param momentum: SGD momentum
+        :param optimizer_kwargs: optimizer argumnets dictionary
         :param ssd_lr_multiplier: ssd learning rate multiplier (learning rate * mult)
-        :param warm_restart_epochs: number of epochs before resetting learning rate
-        :param warm_restart_len_mult: coef to multiply number of epochs after each reset
+        :param lr_scheduler: LR scheduler name
+        :param lr_scheduler_kwargs: LR scheduler arguments dictionary
         :param auto_lr_find: perform auto lr finding
         :param batch_size: mini-batch size for training
         :param num_workers: number of workers for dataloader
@@ -511,7 +503,6 @@ class SSDIR(pl.LightningModule):
         :param z_where_scale_const: z_where scale used in inference
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
-        :param weighted_merge: merge output images using weighted sum (else: masked)
         :param normalize_elbo: normalize elbo components by tenors' numels
         :param what_coef: z_what loss component coefficient
         :param where_coef: z_where loss component coefficient
@@ -551,15 +542,19 @@ class SSDIR(pl.LightningModule):
             ssd=ssd_model,
             z_what_size=z_what_size,
             drop_empty=drop,
-            weighted_merge=weighted_merge,
             train_what=train_what,
         )
 
+        self.optimizer = optimizers[optimizer]
+        if optimizer_kwargs is None:
+            optimizer_kwargs = []
+        self.optimizer_kwargs = dict(optimizer_kwargs)
         self.lr = learning_rate
-        self.momentum = momentum
         self.ssd_lr_multiplier = ssd_lr_multiplier
-        self.warm_restart_epochs = warm_restart_epochs
-        self.warm_restart_len_mult = warm_restart_len_mult
+        self.lr_scheduler = lr_schedulers.get(lr_scheduler)
+        if lr_scheduler_kwargs is None:
+            lr_scheduler_kwargs = []
+        self.lr_scheduler_kwargs = dict(lr_scheduler_kwargs)
         self.auto_lr_find = auto_lr_find
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -627,16 +622,23 @@ class SSDIR(pl.LightningModule):
             "--data_dir", type=str, default="data", help="Dataset files directory"
         )
         parser.add_argument(
+            "--optimizer",
+            type=str,
+            default="Adam",
+            help=f"Used optimizer. Available: {list(optimizers.keys())}",
+        )
+        parser.add_argument(
+            "--optimizer_kwargs",
+            type=parse_kwargs,
+            default=[],
+            nargs="*",
+            help="Optimizer kwargs in the form of key=value separated by spaces",
+        )
+        parser.add_argument(
             "--learning_rate",
             type=float,
             default=1e-3,
             help="Learning rate used for training the model",
-        )
-        parser.add_argument(
-            "--momentum",
-            type=float,
-            default=0.9,
-            help="Momentum used for training the model with SGD",
         )
         parser.add_argument(
             "--ssd_lr_multiplier",
@@ -645,16 +647,20 @@ class SSDIR(pl.LightningModule):
             help="Learning rate multiplier for training SSD backbone",
         )
         parser.add_argument(
-            "--warm_restart_epochs",
-            type=float,
-            default=1 / 3,
-            help="Number of epochs after which a warm restart is performed",
+            "--lr_scheduler",
+            type=str,
+            default="None",
+            help=(
+                "Used LR scheduler. "
+                f"Available: {list(lr_schedulers.keys())}; default: None"
+            ),
         )
         parser.add_argument(
-            "--warm_restart_len_mult",
-            type=int,
-            default=2,
-            help="Coef to multiply warm restart epochs after each restart",
+            "--lr_scheduler_kwargs",
+            type=parse_kwargs,
+            default=[],
+            nargs="*",
+            help="LR scheduler kwargs in the form of key=value separated by spaces",
         )
         parser.add_argument(
             "--batch_size",
@@ -740,14 +746,6 @@ class SSDIR(pl.LightningModule):
             type=float,
             default=None,
             help="constant z_depth scale",
-        )
-        parser.add_argument(
-            "--weighted_merge",
-            type=str2bool,
-            nargs="?",
-            const=True,
-            default=False,
-            help="Use weighted output merging method",
         )
         parser.add_argument(
             "--normalize_elbo",
@@ -966,24 +964,24 @@ class SSDIR(pl.LightningModule):
         batch_size = x.shape[0]
 
         with pyro.plate("data", batch_size):
-            z_what_loc = x.new_zeros(
+            z_what_loc = x.new_zeros(  # with background
                 batch_size, self.n_ssd_features + 1, self.z_what_size
             )
             z_what_scale = torch.ones_like(z_what_loc)
 
             z_where_loc = x.new_tensor(self.z_where_loc_prior).expand(
-                (batch_size, self.n_ssd_features + 1, 4)
+                (batch_size, self.n_ssd_features, 4)
             )
             z_where_scale = x.new_tensor(self.z_where_scale_prior).expand(
-                (batch_size, self.n_ssd_features + 1, 4)
+                (batch_size, self.n_ssd_features, 4)
             )
 
             z_present_p = x.new_full(
-                (batch_size, self.n_ssd_features + 1, 1),
+                (batch_size, self.n_ssd_features, 1),
                 fill_value=self.z_present_p_prior,
             )
 
-            z_depth_loc = x.new_zeros((batch_size, self.n_ssd_features + 1, 1))
+            z_depth_loc = x.new_zeros((batch_size, self.n_ssd_features, 1))
             z_depth_scale = torch.ones_like(z_depth_loc)
 
             with poutine.scale(scale=self.what_coef):
@@ -1177,9 +1175,16 @@ class SSDIR(pl.LightningModule):
         images, boxes, _ = batch
         loss = criterion(self.model, self.guide, images)
 
-        self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
+        if loss.isnan():
+            prefix = "NaN_"
+        else:
+            prefix = ""
+
+        self.log(f"{prefix}{stage}_loss", loss, prog_bar=False, logger=True)
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
-            self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
+            self.log(
+                f"{prefix}{stage}_loss_{site}", site_loss, prog_bar=False, logger=True
+            )
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
@@ -1195,7 +1200,7 @@ class SSDIR(pl.LightningModule):
 
                 self.logger.experiment.log(
                     {
-                        f"{stage}_mse": self.mse[stage](
+                        f"{prefix}{stage}_mse": self.mse[stage](
                             reconstructions.permute(0, 2, 3, 1),
                             denormalize(
                                 vis_images.permute(0, 2, 3, 1),
@@ -1236,7 +1241,7 @@ class SSDIR(pl.LightningModule):
                     )
                     self.logger.experiment.log(
                         {
-                            f"{stage}_inference_image": wandb.Image(
+                            f"{prefix}{stage}_inference_image": wandb.Image(
                                 inference_image,
                                 boxes=wandb_inference_boxes,
                                 caption="model inference",
@@ -1265,9 +1270,12 @@ class SSDIR(pl.LightningModule):
             }
             for latent_name, latent in latents_dict.items():
                 self.logger.experiment.log(
-                    {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
+                    {f"{prefix}{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
+        if torch.isnan(loss):
+            print("Skipping training with this batch due to NaN loss.")
+            return None
 
         return loss
 
@@ -1285,10 +1293,6 @@ class SSDIR(pl.LightningModule):
 
     def configure_optimizers(self):
         """Configure training optimizer."""
-        warm_restart_steps = int(
-            len(self.train_dataloader()) * self.warm_restart_epochs
-        )
-
         if self.ssd_lr_multiplier != 1:
             optimizer_params = [
                 {"params": self.filtered_parameters(exclude="ssd")},
@@ -1300,18 +1304,19 @@ class SSDIR(pl.LightningModule):
         else:
             optimizer_params = self.parameters()
 
-        optimizer = torch.optim.SGD(
-            optimizer_params, lr=self.lr, momentum=self.momentum
+        optimizer = self.optimizer(
+            optimizer_params, lr=self.lr, **self.optimizer_kwargs
         )
-        lr_scheduler = CosineAnnealingWarmRestarts(
-            optimizer=optimizer,
-            T_0=warm_restart_steps,
-            T_mult=self.warm_restart_len_mult,
-        )
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {"scheduler": lr_scheduler, "interval": "step"},
-        }
+        configuration = {"optimizer": optimizer}
+        if self.lr_scheduler is not None:
+            lr_scheduler = self.lr_scheduler(
+                optimizer=optimizer, **self.lr_scheduler_kwargs
+            )
+            configuration["lr_scheduler"] = {
+                "scheduler": lr_scheduler,
+                "interval": "step",
+            }
+        return configuration
 
     def train_dataloader(self) -> DataLoader:
         """Prepare train dataloader."""
