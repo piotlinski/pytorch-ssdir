@@ -1182,7 +1182,9 @@ class SSDIR(pl.LightningModule):
 
         self.log(f"{prefix}{stage}_loss", loss, prog_bar=False, logger=True)
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
-            self.log(f"{prefix}{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
+            self.log(
+                f"{prefix}{stage}_loss_{site}", site_loss, prog_bar=False, logger=True
+            )
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
