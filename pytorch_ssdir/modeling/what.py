@@ -144,13 +144,19 @@ class WhatDecoder(nn.Module):
         super().__init__()
         self.h_size = z_what_size
         layers = [
-            nn.ConvTranspose2d(self.h_size, 128, kernel_size=5, stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, kernel_size=6, stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(32, 3, kernel_size=6, stride=2),
+            nn.ConvTranspose2d(self.h_size, 64, kernel_size=2, stride=2),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(64, 3, kernel_size=1),
             nn.Sigmoid(),
         ]
         self.decoder = nn.Sequential(*layers)
