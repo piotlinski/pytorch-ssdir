@@ -144,7 +144,7 @@ class WhatDecoder(nn.Module):
         super().__init__()
         self.h_size = z_what_size
         layers = [
-            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
+            nn.ConvTranspose2d(self.h_size, 64, kernel_size=2, stride=2),
             nn.LeakyReLU(0.2),
             nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
             nn.LeakyReLU(0.2),
