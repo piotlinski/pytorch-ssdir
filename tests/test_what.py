@@ -62,7 +62,7 @@ def test_what_encoder_constant_scale():
 
 
 @pytest.mark.parametrize("z_what_size", [2, 4, 5])
-@pytest.mark.parametrize("n_objects", [1, 4, 9])
+@pytest.mark.parametrize("n_objects", [2, 4, 9])
 def test_what_decoder_dimensions(z_what_size, n_objects):
     """Verify if what decoder output dimensions."""
     z_whats = torch.rand(n_objects, z_what_size)
