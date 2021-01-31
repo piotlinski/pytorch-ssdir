@@ -466,7 +466,8 @@ class SSDIR(pl.LightningModule):
         present_coef: float = 1.0,
         depth_coef: float = 1.0,
         rec_coef: float = 1.0,
-        train_what: bool = True,
+        train_what_encoder: bool = True,
+        train_what_decoder: bool = True,
         train_where: bool = True,
         train_present: bool = True,
         train_depth: bool = True,
@@ -509,7 +510,8 @@ class SSDIR(pl.LightningModule):
         :param present_coef: z_present loss component coefficient
         :param depth_coef: z_depth loss component coefficient
         :param rec_coef: reconstruction error component coefficient
-        :param train_what: train what encoder and decoder
+        :param train_what_encoder: train what encoder
+        :param train_what_decoder: train what decoder
         :param train_where: train where encoder
         :param train_present: train present encoder
         :param train_depth: train depth encoder
@@ -530,7 +532,7 @@ class SSDIR(pl.LightningModule):
             z_what_hidden=z_what_hidden,
             z_what_scale_const=z_what_scale_const,
             z_depth_scale_const=z_depth_scale_const,
-            train_what=train_what,
+            train_what=train_what_encoder,
             train_where=train_where,
             train_present=train_present,
             train_depth=train_depth,
@@ -542,7 +544,7 @@ class SSDIR(pl.LightningModule):
             ssd=ssd_model,
             z_what_size=z_what_size,
             drop_empty=drop,
-            train_what=train_what,
+            train_what=train_what_decoder,
         )
 
         self.optimizer = optimizers[optimizer]
@@ -786,12 +788,20 @@ class SSDIR(pl.LightningModule):
             help="Reconstruction error component coefficient",
         )
         parser.add_argument(
-            "--train_what",
+            "--train_what_encoder",
             type=str2bool,
             nargs="?",
             const=True,
             default=True,
-            help="Train what encoder and decoder",
+            help="Train what encoder",
+        )
+        parser.add_argument(
+            "--train_what_decoder",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+            help="Train what decoder",
         )
         parser.add_argument(
             "--train_where",
