@@ -12,20 +12,41 @@ def test_where_encoder_dimensions(ssd_model, ssd_features, n_ssd_features):
         ssd_anchors=ssd_model.anchors,
         ssd_center_variance=ssd_model.center_variance,
         ssd_size_variance=ssd_model.size_variance,
+        square_boxes=False,
     )
     outputs = encoder(ssd_features)
     assert outputs.shape == (ssd_features[0].shape[0], n_ssd_features, 4)
 
 
 def test_where_encoder_dtype(ssd_model, ssd_features):
+    """Verify WhereEncoder output dtype."""
     encoder = WhereEncoder(
         ssd_box_predictor=ssd_model.predictor,
         ssd_anchors=ssd_model.anchors,
         ssd_center_variance=ssd_model.center_variance,
         ssd_size_variance=ssd_model.size_variance,
+        square_boxes=False,
     )
     outputs = encoder(ssd_features)
     assert outputs.dtype == torch.float
+
+
+@pytest.mark.parametrize(
+    "rectangular, square",
+    [
+        (
+            torch.tensor([[[1.0, 2.0, 5.0, 10.0], [2.0, 5.0, 9.0, 4.0]]]),
+            torch.tensor([[[1.0, 2.0, 10.0, 10.0], [2.0, 5.0, 9.0, 9.0]]]),
+        ),
+        (
+            torch.tensor([[[12.3, 34.2, 56.2, 13.4]], [[12.5, 65.3, 66.3, 66.3]]]),
+            torch.tensor([[[12.3, 34.2, 56.2, 56.2]], [[12.5, 65.3, 66.3, 66.3]]]),
+        ),
+    ],
+)
+def test_convert_to_square(rectangular, square):
+    """Check if rectangular bounding boxes are converted to max squares."""
+    assert torch.equal(WhereEncoder.convert_to_square(rectangular), square)
 
 
 @pytest.mark.parametrize("decoded_size", [2, 3])

@@ -65,6 +65,7 @@ class Encoder(nn.Module):
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         z_present_eps: float = 1e-3,
+        square_boxes: bool = False,
         train_what: bool = True,
         train_where: bool = True,
         train_present: bool = True,
@@ -96,6 +97,7 @@ class Encoder(nn.Module):
             ssd_anchors=ssd.anchors,
             ssd_center_variance=ssd.center_variance,
             ssd_size_variance=ssd.size_variance,
+            square_boxes=square_boxes,
         ).requires_grad_(train_where)
         self.present_enc = PresentEncoder(
             ssd_box_predictor=ssd.predictor
@@ -457,6 +459,7 @@ class SSDIR(pl.LightningModule):
         z_where_pos_scale_prior: float = 1.0,
         z_where_size_scale_prior: float = 0.2,
         drop: bool = True,
+        square_boxes: bool = False,
         z_where_scale_const: float = 0.05,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
@@ -501,6 +504,7 @@ class SSDIR(pl.LightningModule):
         :param z_where_pos_scale_prior: prior z_where scale for bbox position
         :param z_where_size_scale_prior: prior z_where scale for bbox size
         :param drop: drop empty objects' latents
+        :param square_boxes: use square boxes instead of rectangular
         :param z_where_scale_const: z_where scale used in inference
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
@@ -532,6 +536,7 @@ class SSDIR(pl.LightningModule):
             z_what_hidden=z_what_hidden,
             z_what_scale_const=z_what_scale_const,
             z_depth_scale_const=z_depth_scale_const,
+            square_boxes=square_boxes,
             train_what=train_what_encoder,
             train_where=train_where,
             train_present=train_present,
@@ -730,6 +735,14 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=True,
             help="Drop empty objects' latents",
+        )
+        parser.add_argument(
+            "--square_boxes",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Use square boxes only",
         )
         parser.add_argument(
             "--z_where_scale_const",
