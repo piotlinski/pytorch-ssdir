@@ -45,7 +45,7 @@ class WhereEncoder(nn.Module):
             .unsqueeze(-1)
             .expand(*boxes.shape[:-1], 2)
         )
-        xy = torch.tensor([0, 1], dtype=wh.dtype).expand_as(wh)
+        xy = wh.new_tensor([0, 1]).expand_as(wh)
         index = torch.cat((xy, wh), dim=-1)
         return torch.gather(boxes, dim=-1, index=index)
 
