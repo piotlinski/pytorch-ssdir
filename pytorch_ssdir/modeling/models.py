@@ -609,6 +609,7 @@ class SSDIR(pl.LightningModule):
         self._depth_coef = depth_coef
         self._rec_coef = rec_coef
 
+        self.reset_non_present = reset_non_present
         self.visualize_inference = visualize_inference
         self.visualize_inference_freq = visualize_inference_freq
         self.n_visualize_objects = n_visualize_objects
@@ -1298,6 +1299,21 @@ class SSDIR(pl.LightningModule):
                     z_present_p,
                     (z_depth_loc, z_depth_scale),
                 ) = self.encoder(vis_images)
+            if self.reset_non_present:
+                present_mask = torch.gt(z_present_p, 1e-3)
+                what_present_mask = torch.hstack(  # consider background
+                    (
+                        present_mask,
+                        present_mask.new_full((1,), fill_value=True).expand(
+                            present_mask.shape[0], 1, 1
+                        ),
+                    )
+                )
+                z_what_loc = torch.where(what_present_mask, z_what_loc)
+                z_what_scale = torch.where(what_present_mask, z_what_scale)
+                z_where_loc = torch.where(present_mask, z_where_loc)
+                z_depth_loc = torch.where(present_mask, z_depth_loc)
+                z_depth_scale = torch.where(present_mask, z_depth_scale)
             latents_dict = {
                 "z_what_loc": z_what_loc,
                 "z_what_scale": z_what_scale,
