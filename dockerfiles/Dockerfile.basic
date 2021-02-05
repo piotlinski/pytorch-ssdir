@@ -50,6 +50,7 @@ RUN pip install -r /tmp/requirements.txt
 RUN rm -rf /tmp/requirements.txt
 
 COPY dockerfiles/entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN ln -s /usr/local/bin/entrypoint.sh /
 ENTRYPOINT ["entrypoint.sh"]
 
