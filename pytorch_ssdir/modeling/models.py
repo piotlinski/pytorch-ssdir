@@ -73,10 +73,12 @@ class Encoder(nn.Module):
         train_backbone: bool = True,
         train_backbone_layers: int = -1,
         clone_backbone: bool = False,
+        reset_non_present: bool = True,
     ):
         super().__init__()
         self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
         self.clone_backbone = clone_backbone
+        self.reset = reset_non_present
         if self.clone_backbone:
             self.ssd_backbone_cloned = deepcopy(self.ssd_backbone).requires_grad_(True)
         if train_backbone_layers >= 0 and train_backbone:
@@ -243,7 +245,9 @@ class Encoder(nn.Module):
             (z_depth_loc, z_depth_scale),
         )
         padded_latents = self.pad_latents(latents)
-        return self.reset_non_present(padded_latents)
+        if self.reset:
+            padded_latents = self.reset_non_present(padded_latents)
+        return padded_latents
 
 
 class Decoder(nn.Module):
@@ -477,6 +481,7 @@ class SSDIR(pl.LightningModule):
         train_backbone: bool = True,
         train_backbone_layers: int = -1,
         clone_backbone: bool = False,
+        reset_non_present: bool = True,
         visualize_inference: bool = True,
         visualize_inference_freq: int = 500,
         n_visualize_objects: int = 10,
@@ -522,6 +527,7 @@ class SSDIR(pl.LightningModule):
         :param train_backbone: train ssd backbone
         :param train_backbone_layers: n layers to train in the backbone (neg for all)
         :param clone_backbone: clone backbone for depth and what encoders
+        :param reset_non_present: set non-present latents to some ordinary ones
         :param visualize_inference: visualize inference
         :param visualize_inference_freq: how often to visualize inference
         :param n_visualize_objects: number of objects to visualize
@@ -544,6 +550,7 @@ class SSDIR(pl.LightningModule):
             train_backbone=train_backbone,
             train_backbone_layers=train_backbone_layers,
             clone_backbone=clone_backbone,
+            reset_non_present=reset_non_present,
         )
         self.decoder = Decoder(
             ssd=ssd_model,
@@ -861,6 +868,14 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=False,
             help="Clone SSD backbone for what and depth encoders",
+        )
+        parser.add_argument(
+            "--reset_non_present",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Reset non-present objects' latents to more ordinary",
         )
         parser.add_argument(
             "--flip_train",
