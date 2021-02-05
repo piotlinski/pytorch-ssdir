@@ -65,6 +65,7 @@ class Encoder(nn.Module):
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         z_present_eps: float = 1e-3,
+        square_boxes: bool = False,
         train_what: bool = True,
         train_where: bool = True,
         train_present: bool = True,
@@ -72,10 +73,12 @@ class Encoder(nn.Module):
         train_backbone: bool = True,
         train_backbone_layers: int = -1,
         clone_backbone: bool = False,
+        reset_non_present: bool = True,
     ):
         super().__init__()
         self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
         self.clone_backbone = clone_backbone
+        self.reset = reset_non_present
         if self.clone_backbone:
             self.ssd_backbone_cloned = deepcopy(self.ssd_backbone).requires_grad_(True)
         if train_backbone_layers >= 0 and train_backbone:
@@ -96,6 +99,7 @@ class Encoder(nn.Module):
             ssd_anchors=ssd.anchors,
             ssd_center_variance=ssd.center_variance,
             ssd_size_variance=ssd.size_variance,
+            square_boxes=square_boxes,
         ).requires_grad_(train_where)
         self.present_enc = PresentEncoder(
             ssd_box_predictor=ssd.predictor
@@ -241,7 +245,9 @@ class Encoder(nn.Module):
             (z_depth_loc, z_depth_scale),
         )
         padded_latents = self.pad_latents(latents)
-        return self.reset_non_present(padded_latents)
+        if self.reset:
+            padded_latents = self.reset_non_present(padded_latents)
+        return padded_latents
 
 
 class Decoder(nn.Module):
@@ -457,6 +463,7 @@ class SSDIR(pl.LightningModule):
         z_where_pos_scale_prior: float = 1.0,
         z_where_size_scale_prior: float = 0.2,
         drop: bool = True,
+        square_boxes: bool = False,
         z_where_scale_const: float = 0.05,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
@@ -466,13 +473,15 @@ class SSDIR(pl.LightningModule):
         present_coef: float = 1.0,
         depth_coef: float = 1.0,
         rec_coef: float = 1.0,
-        train_what: bool = True,
+        train_what_encoder: bool = True,
+        train_what_decoder: bool = True,
         train_where: bool = True,
         train_present: bool = True,
         train_depth: bool = True,
         train_backbone: bool = True,
         train_backbone_layers: int = -1,
         clone_backbone: bool = False,
+        reset_non_present: bool = True,
         visualize_inference: bool = True,
         visualize_inference_freq: int = 500,
         n_visualize_objects: int = 10,
@@ -500,6 +509,7 @@ class SSDIR(pl.LightningModule):
         :param z_where_pos_scale_prior: prior z_where scale for bbox position
         :param z_where_size_scale_prior: prior z_where scale for bbox size
         :param drop: drop empty objects' latents
+        :param square_boxes: use square boxes instead of rectangular
         :param z_where_scale_const: z_where scale used in inference
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
@@ -509,13 +519,15 @@ class SSDIR(pl.LightningModule):
         :param present_coef: z_present loss component coefficient
         :param depth_coef: z_depth loss component coefficient
         :param rec_coef: reconstruction error component coefficient
-        :param train_what: train what encoder and decoder
+        :param train_what_encoder: train what encoder
+        :param train_what_decoder: train what decoder
         :param train_where: train where encoder
         :param train_present: train present encoder
         :param train_depth: train depth encoder
         :param train_backbone: train ssd backbone
         :param train_backbone_layers: n layers to train in the backbone (neg for all)
         :param clone_backbone: clone backbone for depth and what encoders
+        :param reset_non_present: set non-present latents to some ordinary ones
         :param visualize_inference: visualize inference
         :param visualize_inference_freq: how often to visualize inference
         :param n_visualize_objects: number of objects to visualize
@@ -530,19 +542,21 @@ class SSDIR(pl.LightningModule):
             z_what_hidden=z_what_hidden,
             z_what_scale_const=z_what_scale_const,
             z_depth_scale_const=z_depth_scale_const,
-            train_what=train_what,
+            square_boxes=square_boxes,
+            train_what=train_what_encoder,
             train_where=train_where,
             train_present=train_present,
             train_depth=train_depth,
             train_backbone=train_backbone,
             train_backbone_layers=train_backbone_layers,
             clone_backbone=clone_backbone,
+            reset_non_present=reset_non_present,
         )
         self.decoder = Decoder(
             ssd=ssd_model,
             z_what_size=z_what_size,
             drop_empty=drop,
-            train_what=train_what,
+            train_what=train_what_decoder,
         )
 
         self.optimizer = optimizers[optimizer]
@@ -595,6 +609,7 @@ class SSDIR(pl.LightningModule):
         self._depth_coef = depth_coef
         self._rec_coef = rec_coef
 
+        self.reset_non_present = reset_non_present
         self.visualize_inference = visualize_inference
         self.visualize_inference_freq = visualize_inference_freq
         self.n_visualize_objects = n_visualize_objects
@@ -730,6 +745,14 @@ class SSDIR(pl.LightningModule):
             help="Drop empty objects' latents",
         )
         parser.add_argument(
+            "--square_boxes",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Use square boxes only",
+        )
+        parser.add_argument(
             "--z_where_scale_const",
             type=float,
             default=0.05,
@@ -786,12 +809,20 @@ class SSDIR(pl.LightningModule):
             help="Reconstruction error component coefficient",
         )
         parser.add_argument(
-            "--train_what",
+            "--train_what_encoder",
             type=str2bool,
             nargs="?",
             const=True,
             default=True,
-            help="Train what encoder and decoder",
+            help="Train what encoder",
+        )
+        parser.add_argument(
+            "--train_what_decoder",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+            help="Train what decoder",
         )
         parser.add_argument(
             "--train_where",
@@ -838,6 +869,14 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=False,
             help="Clone SSD backbone for what and depth encoders",
+        )
+        parser.add_argument(
+            "--reset_non_present",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Reset non-present objects' latents to more ordinary",
         )
         parser.add_argument(
             "--flip_train",
@@ -1260,6 +1299,21 @@ class SSDIR(pl.LightningModule):
                     z_present_p,
                     (z_depth_loc, z_depth_scale),
                 ) = self.encoder(vis_images)
+            if self.reset_non_present:
+                present_mask = torch.gt(z_present_p, 1e-3)
+                what_present_mask = torch.hstack(  # consider background
+                    (
+                        present_mask,
+                        present_mask.new_full((1,), fill_value=True).expand(
+                            present_mask.shape[0], 1, 1
+                        ),
+                    )
+                )
+                z_what_loc = torch.where(what_present_mask, z_what_loc)
+                z_what_scale = torch.where(what_present_mask, z_what_scale)
+                z_where_loc = torch.where(present_mask, z_where_loc)
+                z_depth_loc = torch.where(present_mask, z_depth_loc)
+                z_depth_scale = torch.where(present_mask, z_depth_scale)
             latents_dict = {
                 "z_what_loc": z_what_loc,
                 "z_what_scale": z_what_scale,

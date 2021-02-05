@@ -144,25 +144,42 @@ class WhatDecoder(nn.Module):
         super().__init__()
         self.h_size = z_what_size
         layers = [
-            nn.ConvTranspose2d(self.h_size, 64, kernel_size=2, stride=2),
-            nn.LeakyReLU(0.2),
-            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
-            nn.LeakyReLU(0.2),
-            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
-            nn.LeakyReLU(0.2),
-            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
-            nn.LeakyReLU(0.2),
-            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
-            nn.LeakyReLU(0.2),
-            nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(64, 3, kernel_size=1),
+            nn.Conv2d(self.h_size, 1024, kernel_size=1),
+            nn.BatchNorm2d(1024),
+            nn.ReLU(),
+            nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2),
+            nn.BatchNorm2d(512),
+            nn.ReLU(),
+            nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.Conv2d(16, 3, kernel_size=1),
             nn.Sigmoid(),
         ]
         self.decoder = nn.Sequential(*layers)
+        self.init_decoder()
 
     def forward(self, z_what: torch.Tensor) -> torch.Tensor:
         """Takes z_what latent (sum_features(grid*grid) x z_what_size)
         .. and outputs decoded image (sum_features(grid*grid) x 3 x 64 x 64)
         """
         return self.decoder(z_what.view(-1, self.h_size, 1, 1))
+
+    def init_decoder(self):
+        """Initialize model params."""
+        for module in self.decoder.modules():
+            if isinstance(module, (nn.Conv2d, nn.ConvTranspose2d)):
+                nn.init.xavier_uniform_(module.weight)
+                nn.init.zeros_(module.bias)

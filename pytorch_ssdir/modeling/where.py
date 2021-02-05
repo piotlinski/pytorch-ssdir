@@ -28,12 +28,26 @@ class WhereEncoder(nn.Module):
         ssd_anchors: torch.Tensor,
         ssd_center_variance: float,
         ssd_size_variance: float,
+        square_boxes: bool,
     ):
         super().__init__()
         self.ssd_loc_reg_headers = ssd_box_predictor.reg_headers
         self.register_buffer("anchors", ssd_anchors)
         self.center_variance = ssd_center_variance
         self.size_variance = ssd_size_variance
+        self.square_boxes = square_boxes
+
+    @staticmethod
+    def convert_to_square(boxes: torch.Tensor) -> torch.Tensor:
+        """Convert rectangular boxes to squares by taking max(height, width)."""
+        wh = (
+            (torch.argmax(boxes[..., 2:], dim=-1) + 2)
+            .unsqueeze(-1)
+            .expand(*boxes.shape[:-1], 2)
+        )
+        xy = wh.new_tensor([0, 1]).expand_as(wh)
+        index = torch.cat((xy, wh), dim=-1)
+        return torch.gather(boxes, dim=-1, index=index)
 
     def forward(self, features: Tuple[torch.Tensor, ...]) -> torch.Tensor:
         """Takes tuple of tensors (batch_size x grid x grid x features)
@@ -57,6 +71,9 @@ class WhereEncoder(nn.Module):
             center_variance=self.center_variance,
             size_variance=self.size_variance,
         )
+
+        if self.square_boxes:
+            where_boxes = self.convert_to_square(where_boxes)
 
         return where_boxes
 
