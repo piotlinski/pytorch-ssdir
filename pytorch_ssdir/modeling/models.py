@@ -704,7 +704,7 @@ class SSDIR(pl.LightningModule):
             "--z_what_hidden",
             type=int,
             default=2,
-            help="Number of what encoder hidden layers; -1 for backward compatibility",
+            help="Number of what encoder hidden layers",
         )
         parser.add_argument(
             "--z_present_p_prior",
