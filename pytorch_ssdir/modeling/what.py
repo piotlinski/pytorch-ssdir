@@ -37,27 +37,22 @@ class WhatEncoder(nn.Module):
 
     def _build_feature_encoder(self, in_channels: int) -> nn.Module:
         """Prepare single feature encoder."""
-        if self.n_hidden == -1:
-            return nn.Conv2d(
-                in_channels=in_channels,
-                out_channels=self.out_size,
-                kernel_size=3,
-                stride=1,
-                padding=1,
-            )
         hid_size = 2 * self.out_size
         layers = [
             nn.Conv2d(in_channels=in_channels, out_channels=hid_size, kernel_size=1)
         ]
         for _ in range(self.n_hidden):
-            layers.append(
-                nn.Conv2d(
-                    in_channels=hid_size,
-                    out_channels=hid_size,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                )
+            layers.extend(
+                [
+                    nn.Conv2d(
+                        in_channels=hid_size,
+                        out_channels=hid_size,
+                        kernel_size=3,
+                        stride=1,
+                        padding=1,
+                    ),
+                    nn.ReLU(),
+                ]
             )
         layers.append(
             nn.Conv2d(in_channels=hid_size, out_channels=self.out_size, kernel_size=1)
@@ -145,25 +140,18 @@ class WhatDecoder(nn.Module):
         self.h_size = z_what_size
         layers = [
             nn.Conv2d(self.h_size, 1024, kernel_size=1),
-            nn.BatchNorm2d(1024),
             nn.ReLU(),
             nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2),
-            nn.BatchNorm2d(512),
             nn.ReLU(),
             nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2),
-            nn.BatchNorm2d(256),
             nn.ReLU(),
             nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2),
-            nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2),
-            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2),
-            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2),
-            nn.BatchNorm2d(16),
             nn.ReLU(),
             nn.Conv2d(16, 3, kernel_size=1),
             nn.Sigmoid(),

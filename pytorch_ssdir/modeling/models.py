@@ -704,7 +704,7 @@ class SSDIR(pl.LightningModule):
             "--z_what_hidden",
             type=int,
             default=2,
-            help="Number of what encoder hidden layers; -1 for backward compatibility",
+            help="Number of what encoder hidden layers",
         )
         parser.add_argument(
             "--z_present_p_prior",
@@ -1309,11 +1309,19 @@ class SSDIR(pl.LightningModule):
                         ),
                     )
                 )
-                z_what_loc = torch.where(what_present_mask, z_what_loc)
-                z_what_scale = torch.where(what_present_mask, z_what_scale)
-                z_where_loc = torch.where(present_mask, z_where_loc)
-                z_depth_loc = torch.where(present_mask, z_depth_loc)
-                z_depth_scale = torch.where(present_mask, z_depth_scale)
+                z_what_loc = z_what_loc[what_present_mask.expand_as(z_what_loc)].view(
+                    -1, z_what_loc.shape[-1]
+                )
+                z_what_scale = z_what_scale[
+                    what_present_mask.expand_as(z_what_scale)
+                ].view(-1, z_what_scale.shape[-1])
+                z_where_loc = z_where_loc[present_mask.expand_as(z_where_loc)].view(
+                    -1, z_where_loc.shape[-1]
+                )
+                z_depth_loc = z_depth_loc[present_mask].view(-1, z_depth_loc.shape[-1])
+                z_depth_scale = z_depth_scale[present_mask].view(
+                    -1, z_depth_scale.shape[-1]
+                )
             latents_dict = {
                 "z_what_loc": z_what_loc,
                 "z_what_scale": z_what_scale,
