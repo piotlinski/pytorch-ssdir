@@ -228,3 +228,6 @@ pretrained/*
 
 # env file
 .env
+
+# notebooks dir
+notebooks/*
