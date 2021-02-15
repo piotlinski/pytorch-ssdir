@@ -74,11 +74,13 @@ class Encoder(nn.Module):
         train_backbone_layers: int = -1,
         clone_backbone: bool = False,
         reset_non_present: bool = True,
+        background: bool = True,
     ):
         super().__init__()
         self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
         self.clone_backbone = clone_backbone
         self.reset = reset_non_present
+        self.background = background
         if self.clone_backbone:
             self.ssd_backbone_cloned = deepcopy(self.ssd_backbone).requires_grad_(True)
         if train_backbone_layers >= 0 and train_backbone:
@@ -267,6 +269,7 @@ class Decoder(nn.Module):
         z_what_size: int = 64,
         drop_empty: bool = True,
         train_what: bool = True,
+        background: bool = True,
     ):
         super().__init__()
         self.what_dec = WhatDecoder(z_what_size=z_what_size).requires_grad_(train_what)
@@ -460,6 +463,7 @@ class SSDIR(pl.LightningModule):
         z_present_p_prior: float = 0.01,
         drop: bool = True,
         square_boxes: bool = False,
+        background: bool = True,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         normalize_elbo: bool = False,
@@ -500,6 +504,7 @@ class SSDIR(pl.LightningModule):
         :param z_present_p_prior: present prob prior
         :param drop: drop empty objects' latents
         :param square_boxes: use square boxes instead of rectangular
+        :param background: learn background latents
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
         :param normalize_elbo: normalize elbo components by tenors' numels
@@ -539,12 +544,14 @@ class SSDIR(pl.LightningModule):
             train_backbone_layers=train_backbone_layers,
             clone_backbone=clone_backbone,
             reset_non_present=reset_non_present,
+            background=background,
         )
         self.decoder = Decoder(
             ssd=ssd_model,
             z_what_size=z_what_size,
             drop_empty=drop,
             train_what=train_what_decoder,
+            background=background,
         )
 
         self.optimizer = optimizers[optimizer]
@@ -576,6 +583,7 @@ class SSDIR(pl.LightningModule):
         self.z_what_size = z_what_size
         self.z_present_p_prior = z_present_p_prior
         self.drop = drop
+        self.background = background
 
         self.normalize_elbo = normalize_elbo
         self._what_coef = what_coef
@@ -701,6 +709,14 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=False,
             help="Use square boxes only",
+        )
+        parser.add_argument(
+            "--background",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+            help="Learn background latents",
         )
         parser.add_argument(
             "--z_what_scale_const",
@@ -900,7 +916,11 @@ class SSDIR(pl.LightningModule):
         """Calculate what sampling elbo coefficient."""
         coef = self._what_coef
         if self.normalize_elbo:
-            coef /= self.batch_size * (self.n_ssd_features + 1) * self.z_what_size
+            coef /= (
+                self.batch_size
+                * (self.n_ssd_features + self.background * 1)
+                * self.z_what_size
+            )
         return coef
 
     @property
@@ -908,7 +928,7 @@ class SSDIR(pl.LightningModule):
         """Calculate what sampling elbo coefficient."""
         coef = self._present_coef
         if self.normalize_elbo:
-            coef /= self.batch_size * (self.n_ssd_features + 1)
+            coef /= self.batch_size * (self.n_ssd_features + self.background * 1)
         return coef
 
     @property
@@ -916,7 +936,7 @@ class SSDIR(pl.LightningModule):
         """Calculate what sampling elbo coefficient."""
         coef = self._depth_coef
         if self.normalize_elbo:
-            coef /= self.batch_size * (self.n_ssd_features + 1)
+            coef /= self.batch_size * (self.n_ssd_features + self.background * 1)
         return coef
 
     @property
@@ -934,8 +954,8 @@ class SSDIR(pl.LightningModule):
         _, z_where, *_ = self.encoder(x)
 
         with pyro.plate("data", batch_size):
-            z_what_loc = x.new_zeros(  # with background
-                batch_size, self.n_ssd_features + 1, self.z_what_size
+            z_what_loc = x.new_zeros(
+                batch_size, self.n_ssd_features + self.background * 1, self.z_what_size
             )
             z_what_scale = torch.ones_like(z_what_loc)
 
