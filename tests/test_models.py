@@ -543,24 +543,3 @@ def test_ssdir_forward(z_what_size, batch_size, ssd_model, n_ssd_features):
     outputs = model(inputs)
 
     assert outputs.shape == inputs.shape
-
-
-def test_ssdir_model_guide(ssd_model):
-    """Validate Pyro setup for SSDIR."""
-    pyro.enable_validation()
-    pyro.set_rng_seed(0)
-
-    z_what_size = 3
-    batch_size = 2
-
-    model = SSDIR(
-        ssd_model=ssd_model,
-        dataset_name="MNIST",
-        data_dir="test",
-        z_what_size=z_what_size,
-        batch_size=batch_size,
-    )
-
-    inputs = torch.rand(batch_size, 3, *ssd_model.image_size)
-    model.model(inputs)
-    model.guide(inputs)
