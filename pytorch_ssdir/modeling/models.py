@@ -95,6 +95,7 @@ class Encoder(nn.Module):
             z_what_scale_const=z_what_scale_const,
             feature_channels=ssd.backbone.out_channels,
             feature_maps=ssd.backbone.feature_maps,
+            background=background,
         ).requires_grad_(train_what)
         self.where_enc = WhereEncoder(
             ssd_box_predictor=ssd.predictor,
@@ -162,7 +163,9 @@ class Encoder(nn.Module):
         ) = latents
         # repeat rows to match z_where and z_present
         indices = self.indices.long()
-        what_indices = torch.hstack((indices, indices.max() + 1))  # consider background
+        what_indices = indices
+        if self.background:
+            what_indices = torch.hstack((indices, indices.max() + 1))
         z_what_loc = z_what_loc.index_select(dim=1, index=what_indices)
         z_what_scale = z_what_scale.index_select(dim=1, index=what_indices)
         z_depth_loc = z_depth_loc.index_select(dim=1, index=indices)
@@ -199,14 +202,16 @@ class Encoder(nn.Module):
             (z_depth_loc, z_depth_scale),
         ) = latents
         present_mask = torch.gt(z_present, self.z_present_eps)
-        what_present_mask = torch.hstack(  # consider background
-            (
-                present_mask,
-                present_mask.new_full((1,), fill_value=True).expand(
-                    present_mask.shape[0], 1, 1
-                ),
+        what_present_mask = present_mask
+        if self.background:
+            what_present_mask = torch.hstack(
+                (
+                    present_mask,
+                    present_mask.new_full((1,), fill_value=True).expand(
+                        present_mask.shape[0], 1, 1
+                    ),
+                )
             )
-        )
         z_what_loc = torch.where(what_present_mask, z_what_loc, self.empty_loc)
         z_what_scale = torch.where(what_present_mask, z_what_scale, self.empty_scale)
         z_where = torch.where(present_mask, z_where, self.empty_loc)
