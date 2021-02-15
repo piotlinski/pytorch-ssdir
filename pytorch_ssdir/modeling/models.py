@@ -1255,14 +1255,16 @@ class SSDIR(pl.LightningModule):
                 ) = self.encoder(vis_images)
             if self.reset_non_present:
                 present_mask = torch.gt(z_present_p, 1e-3)
-                what_present_mask = torch.hstack(  # consider background
-                    (
-                        present_mask,
-                        present_mask.new_full((1,), fill_value=True).expand(
-                            present_mask.shape[0], 1, 1
-                        ),
+                what_present_mask = present_mask
+                if self.background:
+                    what_present_mask = torch.hstack(
+                        (
+                            present_mask,
+                            present_mask.new_full((1,), fill_value=True).expand(
+                                present_mask.shape[0], 1, 1
+                            ),
+                        )
                     )
-                )
                 z_what_loc = z_what_loc[what_present_mask.expand_as(z_what_loc)].view(
                     -1, z_what_loc.shape[-1]
                 )
