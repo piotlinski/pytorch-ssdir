@@ -41,7 +41,7 @@ repos:
       - id: tests
         name: run tests
         entry: poetry run pytest -v --cov pytorch_ssdir
-        files: "test_*"
+        files: "test_"
         verbose: true
         language: system
         types: [python]
