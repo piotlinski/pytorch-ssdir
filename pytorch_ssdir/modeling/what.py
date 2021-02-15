@@ -130,11 +130,13 @@ class WhatEncoder(nn.Module):
 
     def init_encoders(self):
         """Initialize model params."""
-        modules = [self.loc_encoders.modules(), self.bg_loc_encoder.modules()]
+        modules = [self.loc_encoders.modules()]
+        if self.background:
+            modules.append(self.bg_loc_encoder.modules())
         if self.z_what_scale_const is None:
-            modules.extend(
-                [self.scale_encoders.modules(), self.bg_scale_encoder.modules()]
-            )
+            modules.append(self.scale_encoders.modules())
+            if self.background:
+                modules.append(self.bg_scale_encoder.modules())
         for module in chain(*modules):
             if isinstance(module, nn.Conv2d):
                 nn.init.xavier_uniform_(module.weight)
