@@ -280,14 +280,16 @@ class Decoder(nn.Module):
         self.what_dec = WhatDecoder(z_what_size=z_what_size).requires_grad_(train_what)
         self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
         self.drop = drop_empty
-        self.register_buffer("bg_depth", torch.zeros(1))
-        self.register_buffer("bg_present", torch.ones(1))
-        self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
+        self.background = background
+        if background:
+            self.register_buffer("bg_depth", torch.zeros(1))
+            self.register_buffer("bg_present", torch.ones(1))
+            self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
         self.pixel_means = ssd.backbone.PIXEL_MEANS
         self.pixel_stds = ssd.backbone.PIXEL_STDS
 
     @staticmethod
-    def pad_indices(n_present: torch.Tensor) -> torch.Tensor:
+    def pad_indices(n_present: torch.Tensor, background: bool = True) -> torch.Tensor:
         """Using number of objects in chunks create indices
         .. so that every chunk is padded to the same dimension.
 
@@ -295,6 +297,7 @@ class Decoder(nn.Module):
         .. Puts background index at the beginning of indices arange
 
         :param n_present: number of objects in each chunk
+        :param background: consider background index
         :return: indices for padding tensors
         """
         end_idx = 1
@@ -303,20 +306,28 @@ class Decoder(nn.Module):
         for chunk_objects in n_present:
             start_idx = end_idx
             end_idx = end_idx + chunk_objects
-            idx_range = torch.cat(
-                (
-                    torch.tensor(
-                        [end_idx - 1], dtype=torch.long, device=n_present.device
+            if background:
+                idx_range = torch.cat(
+                    (
+                        torch.tensor(
+                            [end_idx - 1], dtype=torch.long, device=n_present.device
+                        ),
+                        torch.arange(
+                            start=start_idx,
+                            end=end_idx - 1,
+                            dtype=torch.long,
+                            device=n_present.device,
+                        ),
                     ),
-                    torch.arange(
-                        start=start_idx,
-                        end=end_idx - 1,
-                        dtype=torch.long,
-                        device=n_present.device,
-                    ),
-                ),
-                dim=0,
-            )
+                    dim=0,
+                )
+            else:
+                idx_range = torch.arange(
+                    start=start_idx,
+                    end=end_idx,
+                    dtype=torch.long,
+                    device=n_present.device,
+                )
             indices.append(
                 functional.pad(idx_range, pad=[0, max_objects - chunk_objects])
             )
@@ -377,15 +388,16 @@ class Decoder(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Render reconstructions and their depths from batch."""
         batch_size = z_what.shape[0]
-        z_depth = torch.cat(  # append background depth
-            (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
-        )
-        z_present = torch.cat(  # append background present
-            (z_present, self.bg_present.expand(batch_size, 1, 1)), dim=1
-        )
-        z_where = torch.cat(  # append background where
-            (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
-        )
+        if self.background:  # append background latents
+            z_depth = torch.cat(
+                (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
+            )
+            z_present = torch.cat(
+                (z_present, self.bg_present.expand(batch_size, 1, 1)), dim=1
+            )
+            z_where = torch.cat(
+                (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
+            )
         z_what_shape = z_what.shape
         z_where_shape = z_where.shape
         z_depth_shape = z_depth.shape
@@ -439,11 +451,17 @@ class Decoder(nn.Module):
             z_what, z_where, z_present, z_depth
         )
         # merge reconstructions
-        objects, object_weights = reconstructions[:, 1:], depths[:, 1:]
-        merged = self.merge_reconstructions(
+        if self.background:
+            objects, object_weights = reconstructions[:, 1:], depths[:, 1:]
+        else:
+            objects, object_weights = reconstructions, depths
+        output = self.merge_reconstructions(
             reconstructions=objects, weights=object_weights
         )
-        output = self.fill_background(merged=merged, backgrounds=reconstructions[:, 0])
+        if self.background:
+            output = self.fill_background(
+                merged=output, backgrounds=reconstructions[:, 0]
+            )
         return output
 
 
@@ -609,6 +627,8 @@ class SSDIR(pl.LightningModule):
                 ssd_model.backbone.feature_maps, ssd_model.backbone.boxes_per_loc
             )
         )
+
+        self.save_hyperparameters()
 
     @staticmethod
     def add_model_specific_args(parent_parser: ArgumentParser):
