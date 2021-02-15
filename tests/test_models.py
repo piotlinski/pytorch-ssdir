@@ -8,10 +8,13 @@ from pytorch_ssdir.modeling.models import SSDIR, Decoder, Encoder
 
 @pytest.mark.parametrize("z_what_size", [2, 4])
 @pytest.mark.parametrize("batch_size", [2, 3])
-def test_encoder_dimensions(z_what_size, batch_size, ssd_model, n_ssd_features):
+@pytest.mark.parametrize("background", [True, False])
+def test_encoder_dimensions(
+    z_what_size, batch_size, background, ssd_model, n_ssd_features
+):
     """Verify encoder output dimensions."""
     inputs = torch.rand(batch_size, 3, 300, 300)
-    encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size)
+    encoder = Encoder(ssd=ssd_model, z_what_size=z_what_size, background=background)
     (
         (z_what_loc, z_what_scale),
         z_where,
@@ -21,7 +24,7 @@ def test_encoder_dimensions(z_what_size, batch_size, ssd_model, n_ssd_features):
     assert (
         z_what_loc.shape
         == z_what_scale.shape
-        == (batch_size, n_ssd_features + 1, z_what_size)
+        == (batch_size, n_ssd_features + background * 1, z_what_size)
     )
     assert z_where.shape == (batch_size, n_ssd_features, 4)
     assert z_present.shape == (batch_size, n_ssd_features, 1)
@@ -116,19 +119,24 @@ def test_latents_indices(ssd_model, n_ssd_features):
     assert (torch.sort(indices)[0] == indices).all()
 
 
-def test_pad_latents(ssd_model, n_ssd_features):
+@pytest.mark.parametrize("background", [True, False])
+def test_pad_latents(background, ssd_model, n_ssd_features):
     """Verify if latents are padded appropriately."""
     n_features = sum(features ** 2 for features in ssd_model.backbone.feature_maps)
-    encoder = Encoder(ssd=ssd_model)
+    encoder = Encoder(ssd=ssd_model, background=background)
     z_what_loc = (
-        torch.arange(n_features + 1, dtype=torch.float)
+        torch.arange(n_features + background * 1, dtype=torch.float)
         .view(1, -1, 1)
-        .expand(1, n_features + 1, 4)
+        .expand(1, n_features + background * 1, 4)
     )
     z_what_scale = (
-        torch.arange(n_features + 1, 2 * (n_features + 1), dtype=torch.float)
+        torch.arange(
+            n_features + background * 1,
+            2 * (n_features + background * 1),
+            dtype=torch.float,
+        )
         .view(1, -1, 1)
-        .expand(1, n_features + 1, 4)
+        .expand(1, n_features + background * 1, 4)
     )
     z_where = torch.zeros(1, n_ssd_features, dtype=torch.float)
     z_present = torch.zeros(1, n_ssd_features, dtype=torch.float)
@@ -146,7 +154,11 @@ def test_pad_latents(ssd_model, n_ssd_features):
     ) = encoder.pad_latents(
         ((z_what_loc, z_what_scale), z_where, z_present, (z_depth_loc, z_depth_scale))
     )
-    assert new_z_what_loc.shape == new_z_what_scale.shape == (1, n_ssd_features + 1, 4)
+    assert (
+        new_z_what_loc.shape
+        == new_z_what_scale.shape
+        == (1, n_ssd_features + background * 1, 4)
+    )
     assert torch.equal(new_z_what_loc[0][0], new_z_what_loc[0][1])
     assert torch.equal(new_z_what_scale[0][2], new_z_what_scale[0][3])
     assert torch.equal(new_z_what_loc[0][8], new_z_what_loc[0][9])
@@ -162,11 +174,20 @@ def test_pad_latents(ssd_model, n_ssd_features):
     assert torch.equal(new_z_depth_scale[0][850], new_z_depth_scale[0][851])
 
 
-def test_reset_non_present(ssd_model):
+@pytest.mark.parametrize("background", [True, False])
+def test_reset_non_present(background, ssd_model):
     """Verify if appropriate latents are reset in encoder."""
-    encoder = Encoder(ssd=ssd_model)
-    z_what_loc = torch.arange(1, 6, dtype=torch.float).view(1, -1, 1).expand(1, 5, 3)
-    z_what_scale = torch.arange(6, 11, dtype=torch.float).view(1, -1, 1).expand(1, 5, 3)
+    encoder = Encoder(ssd=ssd_model, background=background)
+    z_what_loc = (
+        torch.arange(1, 5 + background * 1, dtype=torch.float)
+        .view(1, -1, 1)
+        .expand(1, 4 + background * 1, 3)
+    )
+    z_what_scale = (
+        torch.arange(5 + background * 1, 9 + background * 2, dtype=torch.float)
+        .view(1, -1, 1)
+        .expand(1, 4 + background * 1, 3)
+    )
     z_where = torch.arange(1, 5, dtype=torch.float).view(1, -1, 1).expand(1, 4, 4)
     z_present = torch.tensor([1, 0, 0, 1], dtype=torch.float).view(1, -1, 1)
     z_depth_loc = torch.arange(5, 9, dtype=torch.float).view(1, -1, 1)
