@@ -288,8 +288,7 @@ class Decoder(nn.Module):
         self.pixel_means = ssd.backbone.PIXEL_MEANS
         self.pixel_stds = ssd.backbone.PIXEL_STDS
 
-    @staticmethod
-    def pad_indices(n_present: torch.Tensor, background: bool = True) -> torch.Tensor:
+    def pad_indices(self, n_present: torch.Tensor) -> torch.Tensor:
         """Using number of objects in chunks create indices
         .. so that every chunk is padded to the same dimension.
 
@@ -297,7 +296,6 @@ class Decoder(nn.Module):
         .. Puts background index at the beginning of indices arange
 
         :param n_present: number of objects in each chunk
-        :param background: consider background index
         :return: indices for padding tensors
         """
         end_idx = 1
@@ -306,7 +304,7 @@ class Decoder(nn.Module):
         for chunk_objects in n_present:
             start_idx = end_idx
             end_idx = end_idx + chunk_objects
-            if background:
+            if self.background:
                 idx_range = torch.cat(
                     (
                         torch.tensor(

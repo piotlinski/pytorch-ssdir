@@ -235,9 +235,27 @@ def test_reset_non_present(background, ssd_model):
         (torch.tensor([3, 1, 1]), torch.tensor([3, 1, 2, 4, 0, 0, 5, 0, 0])),
     ],
 )
-def test_pad_indices(n_present, expected):
+def test_pad_indices(n_present, expected, ssd_model):
     """Verify pad indices calculation."""
-    indices = Decoder.pad_indices(n_present)
+    decoder = Decoder(ssd=ssd_model, z_what_size=4, background=True)
+    indices = decoder.pad_indices(n_present)
+    assert indices.shape == (n_present.shape[0] * (torch.max(n_present)),)
+    assert torch.max(indices) == torch.sum(n_present)
+    assert torch.equal(indices, expected)
+
+
+@pytest.mark.parametrize(
+    "n_present, expected",
+    [
+        (torch.tensor([1, 3, 2]), torch.tensor([1, 0, 0, 2, 3, 4, 5, 6, 0])),
+        (torch.tensor([1, 2, 2]), torch.tensor([1, 0, 2, 3, 4, 5])),
+        (torch.tensor([3, 1, 1]), torch.tensor([1, 2, 3, 4, 0, 0, 5, 0, 0])),
+    ],
+)
+def test_pad_indices_no_background(n_present, expected, ssd_model):
+    """Verify pad indices calculation."""
+    decoder = Decoder(ssd=ssd_model, z_what_size=4, background=False)
+    indices = decoder.pad_indices(n_present)
     assert indices.shape == (n_present.shape[0] * (torch.max(n_present)),)
     assert torch.max(indices) == torch.sum(n_present)
     assert torch.equal(indices, expected)
@@ -367,7 +385,7 @@ def sample_latents():
 
 def test_reconstruct_objects_drop(ssd_model, sample_latents):
     """Verify if reconstructing objects is conducted correctly for drop decoder."""
-    decoder = Decoder(ssd=ssd_model, z_what_size=2, drop_empty=True)
+    decoder = Decoder(ssd=ssd_model, z_what_size=2, drop_empty=True, background=True)
     z_what, z_where, z_present, z_depth = sample_latents
 
     decoder.what_dec = WhatDecoderMock(n_objects=5, z_what_size=4)
@@ -412,9 +430,47 @@ def test_reconstruct_objects_drop(ssd_model, sample_latents):
     assert depths[1][2] == -float("inf")
 
 
+def test_reconstruct_objects_no_background(ssd_model, sample_latents):
+    """Verify if reconstructing objects is conducted correctly for no-background."""
+    decoder = Decoder(ssd=ssd_model, z_what_size=2, drop_empty=True, background=False)
+    z_what, z_where, z_present, z_depth = sample_latents
+    z_what = z_what[:, :-1]
+
+    decoder.what_dec = WhatDecoderMock(n_objects=3, z_what_size=4)
+    decoder.where_stn = WhereTransformerMock(n_objects=3, image_size=2)
+
+    def what_decoder_test_hook(module, input, output):
+        assert torch.eq(input[0][0], 1.0).all()
+        assert torch.eq(input[0][1], 3.0).all()
+        assert torch.eq(input[0][2], 5.0).all()
+
+    decoder.what_dec.register_forward_hook(what_decoder_test_hook)
+
+    def where_transformer_hook(module, input, output):
+        images, z_where_flat = input
+        assert torch.eq(z_where_flat[0], 0.3).all()
+        assert torch.eq(z_where_flat[1], 0.5).all()
+        assert torch.eq(z_where_flat[2], 0.6).all()
+
+    decoder.where_stn.register_forward_hook(where_transformer_hook)
+
+    reconstructions, depths = decoder.reconstruct_objects(
+        z_what, z_where, z_present, z_depth
+    )
+
+    assert torch.equal(reconstructions[0][0][0].view(4), z_what[0][0] * z_where[0][0])
+    assert depths[0][0] == z_depth[0][0]
+    assert torch.equal(reconstructions[0][1][0].view(4), z_what[0][2] * z_where[0][2])
+    assert depths[0][1] == z_depth[0][2]
+    assert torch.equal(reconstructions[1][0][0].view(4), z_what[1][0] * z_where[1][0])
+    assert depths[1][0] == z_depth[1][0]
+    assert torch.eq(reconstructions[1][1][0].view(4), 0).all()
+    assert depths[1][1] == -float("inf")
+
+
 def test_reconstruct_objects_no_drop(ssd_model, sample_latents):
     """Verify if reconstructing objects is conducted correctly for no-drop decoder."""
-    decoder = Decoder(ssd=ssd_model, z_what_size=2, drop_empty=False)
+    decoder = Decoder(ssd=ssd_model, z_what_size=2, drop_empty=False, background=True)
     z_what, z_where, z_present, z_depth = sample_latents
 
     decoder.what_dec = WhatDecoderMock(n_objects=8, z_what_size=4)
@@ -470,15 +526,16 @@ def test_reconstruct_objects_no_drop(ssd_model, sample_latents):
 
 
 @pytest.mark.parametrize("batch_size", [2, 4, 8])
-def test_decoder_dimensions(batch_size, ssd_model, n_ssd_features):
+@pytest.mark.parametrize("background", [True, False])
+def test_decoder_dimensions(batch_size, background, ssd_model, n_ssd_features):
     """Verify decoder output dimensions."""
     z_what_size = 3
-    z_what = torch.rand(batch_size, n_ssd_features + 1, z_what_size)
+    z_what = torch.rand(batch_size, n_ssd_features + background * 1, z_what_size)
     z_where = torch.rand(batch_size, n_ssd_features, 4)
     z_present = torch.randint(0, 100, (batch_size, n_ssd_features, 1))
     z_depth = torch.rand(batch_size, n_ssd_features, 1)
     inputs = (z_what, z_where, z_present, z_depth)
-    decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size)
+    decoder = Decoder(ssd=ssd_model, z_what_size=z_what_size, background=background)
     outputs = decoder(inputs)
     assert outputs.shape == (batch_size, 3, *ssd_model.image_size)
 
@@ -494,7 +551,10 @@ def test_disabling_decoder_modules(train_what, ssd_model):
 
 @pytest.mark.parametrize("z_what_size", [2, 4])
 @pytest.mark.parametrize("batch_size", [2, 3])
-def test_ssdir_encoder_forward(z_what_size, batch_size, ssd_model, n_ssd_features):
+@pytest.mark.parametrize("background", [True, False])
+def test_ssdir_encoder_forward(
+    z_what_size, batch_size, background, ssd_model, n_ssd_features
+):
     """Verify SSDIR encoder_forward output dimensions and dtypes."""
     model = SSDIR(
         ssd_model=ssd_model,
@@ -502,6 +562,7 @@ def test_ssdir_encoder_forward(z_what_size, batch_size, ssd_model, n_ssd_feature
         data_dir="test",
         z_what_size=z_what_size,
         batch_size=batch_size,
+        background=background,
     )
 
     data_shape = (3, *ssd_model.image_size)
@@ -510,7 +571,7 @@ def test_ssdir_encoder_forward(z_what_size, batch_size, ssd_model, n_ssd_feature
     latents = model.encoder_forward(inputs)
     z_what, z_where, z_present, z_depth = latents
 
-    assert z_what.shape == (batch_size, n_ssd_features + 1, z_what_size)
+    assert z_what.shape == (batch_size, n_ssd_features + background * 1, z_what_size)
     assert z_what.dtype == torch.float
     assert z_where.shape == (batch_size, n_ssd_features, 4)
     assert z_where.dtype == torch.float
@@ -523,8 +584,9 @@ def test_ssdir_encoder_forward(z_what_size, batch_size, ssd_model, n_ssd_feature
 @pytest.mark.parametrize("z_what_size", [2, 4])
 @pytest.mark.parametrize("batch_size", [2, 3])
 @pytest.mark.parametrize("drop", [True, False])
+@pytest.mark.parametrize("background", [True, False])
 def test_ssdir_decoder_forward(
-    z_what_size, batch_size, drop, ssd_model, n_ssd_features
+    z_what_size, batch_size, drop, background, ssd_model, n_ssd_features
 ):
     """Verify SSDIR decoder_forward output dimensions and dtypes."""
     model = SSDIR(
@@ -533,9 +595,10 @@ def test_ssdir_decoder_forward(
         data_dir="test",
         z_what_size=z_what_size,
         batch_size=batch_size,
+        background=background,
     )
 
-    z_what = torch.rand(batch_size, n_ssd_features + 1, z_what_size)
+    z_what = torch.rand(batch_size, n_ssd_features + background * 1, z_what_size)
     z_where = torch.rand(batch_size, n_ssd_features, 4)
     z_present = torch.randint(0, 100, (batch_size, n_ssd_features, 1))
     z_depth = torch.rand(batch_size, n_ssd_features, 1)
@@ -549,13 +612,15 @@ def test_ssdir_decoder_forward(
 
 @pytest.mark.parametrize("z_what_size", [2, 4])
 @pytest.mark.parametrize("batch_size", [2, 3])
-def test_ssdir_forward(z_what_size, batch_size, ssd_model, n_ssd_features):
+@pytest.mark.parametrize("background", [True, False])
+def test_ssdir_forward(z_what_size, batch_size, background, ssd_model, n_ssd_features):
     model = SSDIR(
         ssd_model=ssd_model,
         dataset_name="MNIST",
         data_dir="test",
         z_what_size=z_what_size,
         batch_size=batch_size,
+        background=background,
     )
 
     data_shape = (3, *ssd_model.image_size)
