@@ -492,6 +492,7 @@ class SSDIR(pl.LightningModule):
         present_coef: float = 1.0,
         depth_coef: float = 1.0,
         rec_coef: float = 1.0,
+        score_boxes_only: bool = False,
         train_what_encoder: bool = True,
         train_what_decoder: bool = True,
         train_where: bool = True,
@@ -533,6 +534,7 @@ class SSDIR(pl.LightningModule):
         :param present_coef: z_present loss component coefficient
         :param depth_coef: z_depth loss component coefficient
         :param rec_coef: reconstruction error component coefficient
+        :param score_boxes_only: score reconstructions only inside bounding boxes
         :param train_what_encoder: train what encoder
         :param train_what_decoder: train what decoder
         :param train_where: train where encoder
@@ -611,6 +613,7 @@ class SSDIR(pl.LightningModule):
         self._present_coef = present_coef
         self._depth_coef = depth_coef
         self._rec_coef = rec_coef
+        self.score_boxes_only = score_boxes_only
 
         self.reset_non_present = reset_non_present
         self.visualize_inference = visualize_inference
@@ -784,6 +787,14 @@ class SSDIR(pl.LightningModule):
             type=float,
             default=1.0,
             help="Reconstruction error component coefficient",
+        )
+        parser.add_argument(
+            "--score_boxes_only",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Score reconstructions only inside bounding boxes",
         )
         parser.add_argument(
             "--train_what_encoder",
@@ -1005,17 +1016,23 @@ class SSDIR(pl.LightningModule):
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
 
-            output = self.decoder((z_what, z_where, z_present, z_depth))
-
+            output = self.decoder((z_what, z_where, z_present, z_depth)).permute(
+                0, 2, 3, 1
+            )
+            obs = denormalize(
+                x.permute(0, 2, 3, 1),
+                pixel_mean=self.pixel_means,
+                pixel_std=self.pixel_stds,
+            )
+            if self.score_boxes_only:
+                mask = output != 0
+                output = output[mask]
+                obs = obs[mask]
             with poutine.scale(scale=self.rec_coef):
                 pyro.sample(
                     "obs",
-                    dist.Bernoulli(output.permute(0, 2, 3, 1)).to_event(3),
-                    obs=denormalize(
-                        x.permute(0, 2, 3, 1),
-                        pixel_mean=self.pixel_means,
-                        pixel_std=self.pixel_stds,
-                    ),
+                    dist.Bernoulli(output).to_event(3),
+                    obs=obs,
                 )
 
     def guide(self, x: torch.Tensor):
