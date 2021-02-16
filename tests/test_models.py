@@ -461,14 +461,14 @@ def test_reconstruct_objects_no_background(ssd_model, sample_latents):
     assert depths[0][0] == -float("inf")
     assert torch.equal(reconstructions[0][1][0].view(4), z_what[0][0] * z_where[0][0])
     assert depths[0][1] == z_depth[0][0]
-    assert torch.equal(reconstructions[1][0][0].view(4), z_what[0][2] * z_where[0][2])
-    assert depths[1][0] == z_depth[0][2]
-    assert torch.eq(reconstructions[1][1][0].view(4), 0).all()
-    assert depths[1][1] == -float("inf")
-    assert torch.equal(reconstructions[2][0][0].view(4), z_what[1][0] * z_where[1][0])
-    assert depths[2][0] == z_depth[1][0]
-    assert torch.eq(reconstructions[2][1][0].view(4), 0).all()
-    assert depths[2][1] == -float("inf")
+    assert torch.equal(reconstructions[0][2][0].view(4), z_what[0][2] * z_where[0][2])
+    assert depths[0][2] == z_depth[0][2]
+    assert torch.eq(reconstructions[1][0][0].view(4), 0).all()
+    assert depths[1][0] == -float("inf")
+    assert torch.equal(reconstructions[1][1][0].view(4), z_what[1][0] * z_where[1][0])
+    assert depths[1][1] == z_depth[1][0]
+    assert torch.eq(reconstructions[1][2][0].view(4), 0).all()
+    assert depths[1][2] == -float("inf")
 
 
 def test_reconstruct_objects_no_drop(ssd_model, sample_latents):

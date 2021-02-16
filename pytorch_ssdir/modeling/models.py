@@ -349,7 +349,7 @@ class Decoder(nn.Module):
         images = torch.cat((image_starter, transformed_images), dim=0)
         z_depth = torch.cat((z_depth_starter, z_depth), dim=0)
         max_present = torch.max(n_present)
-        padded_shape = max_present.item()
+        padded_shape = max_present.item() + (not self.background) * 1
         indices = self.pad_indices(n_present)
         images = images[indices].view(
             -1,
