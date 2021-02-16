@@ -1031,8 +1031,8 @@ class SSDIR(pl.LightningModule):
             with poutine.scale(scale=self.rec_coef):
                 pyro.sample(
                     "obs",
-                    dist.Bernoulli(output).to_event(3),
-                    obs=obs,
+                    dist.Bernoulli(output.view(batch_size, -1)).to_event(1),
+                    obs=obs.view(batch_size, -1),
                 )
 
     def guide(self, x: torch.Tensor):
