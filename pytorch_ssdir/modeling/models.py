@@ -1029,11 +1029,7 @@ class SSDIR(pl.LightningModule):
                 output = torch.where(mask, output, 0.0)
                 obs = torch.where(mask, obs, 0.0)
             with poutine.scale(scale=self.rec_coef):
-                pyro.sample(
-                    "obs",
-                    dist.Bernoulli(output.view(batch_size, -1)).to_event(1),
-                    obs=obs.view(batch_size, -1),
-                )
+                pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=obs)
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
