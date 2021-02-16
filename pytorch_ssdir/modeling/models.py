@@ -1026,8 +1026,8 @@ class SSDIR(pl.LightningModule):
             )
             if self.score_boxes_only:
                 mask = output != 0
-                output = torch.where(mask, output, 0.0)
-                obs = torch.where(mask, obs, 0.0)
+                output = torch.where(mask, output, torch.tensor(0.0, dtype=torch.float))
+                obs = torch.where(mask, obs, torch.tensor(0.0, dtype=torch.float))
             with poutine.scale(scale=self.rec_coef):
                 pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=obs)
 
