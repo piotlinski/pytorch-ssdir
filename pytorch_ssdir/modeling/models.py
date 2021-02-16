@@ -74,11 +74,13 @@ class Encoder(nn.Module):
         train_backbone_layers: int = -1,
         clone_backbone: bool = False,
         reset_non_present: bool = True,
+        background: bool = True,
     ):
         super().__init__()
         self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
         self.clone_backbone = clone_backbone
         self.reset = reset_non_present
+        self.background = background
         if self.clone_backbone:
             self.ssd_backbone_cloned = deepcopy(self.ssd_backbone).requires_grad_(True)
         if train_backbone_layers >= 0 and train_backbone:
@@ -93,6 +95,7 @@ class Encoder(nn.Module):
             z_what_scale_const=z_what_scale_const,
             feature_channels=ssd.backbone.out_channels,
             feature_maps=ssd.backbone.feature_maps,
+            background=background,
         ).requires_grad_(train_what)
         self.where_enc = WhereEncoder(
             ssd_box_predictor=ssd.predictor,
@@ -160,7 +163,9 @@ class Encoder(nn.Module):
         ) = latents
         # repeat rows to match z_where and z_present
         indices = self.indices.long()
-        what_indices = torch.hstack((indices, indices.max() + 1))  # consider background
+        what_indices = indices
+        if self.background:
+            what_indices = torch.hstack((indices, indices.max() + 1))
         z_what_loc = z_what_loc.index_select(dim=1, index=what_indices)
         z_what_scale = z_what_scale.index_select(dim=1, index=what_indices)
         z_depth_loc = z_depth_loc.index_select(dim=1, index=indices)
@@ -197,14 +202,16 @@ class Encoder(nn.Module):
             (z_depth_loc, z_depth_scale),
         ) = latents
         present_mask = torch.gt(z_present, self.z_present_eps)
-        what_present_mask = torch.hstack(  # consider background
-            (
-                present_mask,
-                present_mask.new_full((1,), fill_value=True).expand(
-                    present_mask.shape[0], 1, 1
-                ),
+        what_present_mask = present_mask
+        if self.background:
+            what_present_mask = torch.hstack(
+                (
+                    present_mask,
+                    present_mask.new_full((1,), fill_value=True).expand(
+                        present_mask.shape[0], 1, 1
+                    ),
+                )
             )
-        )
         z_what_loc = torch.where(what_present_mask, z_what_loc, self.empty_loc)
         z_what_scale = torch.where(what_present_mask, z_what_scale, self.empty_scale)
         z_where = torch.where(present_mask, z_where, self.empty_loc)
@@ -267,19 +274,21 @@ class Decoder(nn.Module):
         z_what_size: int = 64,
         drop_empty: bool = True,
         train_what: bool = True,
+        background: bool = True,
     ):
         super().__init__()
         self.what_dec = WhatDecoder(z_what_size=z_what_size).requires_grad_(train_what)
         self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
         self.drop = drop_empty
-        self.register_buffer("bg_depth", torch.zeros(1))
-        self.register_buffer("bg_present", torch.ones(1))
-        self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
+        self.background = background
+        if background:
+            self.register_buffer("bg_depth", torch.zeros(1))
+            self.register_buffer("bg_present", torch.ones(1))
+            self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
         self.pixel_means = ssd.backbone.PIXEL_MEANS
         self.pixel_stds = ssd.backbone.PIXEL_STDS
 
-    @staticmethod
-    def pad_indices(n_present: torch.Tensor) -> torch.Tensor:
+    def pad_indices(self, n_present: torch.Tensor) -> torch.Tensor:
         """Using number of objects in chunks create indices
         .. so that every chunk is padded to the same dimension.
 
@@ -295,20 +304,28 @@ class Decoder(nn.Module):
         for chunk_objects in n_present:
             start_idx = end_idx
             end_idx = end_idx + chunk_objects
-            idx_range = torch.cat(
-                (
-                    torch.tensor(
-                        [end_idx - 1], dtype=torch.long, device=n_present.device
+            if self.background:
+                idx_range = torch.cat(
+                    (
+                        torch.tensor(
+                            [end_idx - 1], dtype=torch.long, device=n_present.device
+                        ),
+                        torch.arange(
+                            start=start_idx,
+                            end=end_idx - 1,
+                            dtype=torch.long,
+                            device=n_present.device,
+                        ),
                     ),
-                    torch.arange(
-                        start=start_idx,
-                        end=end_idx - 1,
-                        dtype=torch.long,
-                        device=n_present.device,
-                    ),
-                ),
-                dim=0,
-            )
+                    dim=0,
+                )
+            else:
+                idx_range = torch.arange(
+                    start=start_idx,
+                    end=end_idx,
+                    dtype=torch.long,
+                    device=n_present.device,
+                )
             indices.append(
                 functional.pad(idx_range, pad=[0, max_objects - chunk_objects])
             )
@@ -369,15 +386,16 @@ class Decoder(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Render reconstructions and their depths from batch."""
         batch_size = z_what.shape[0]
-        z_depth = torch.cat(  # append background depth
-            (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
-        )
-        z_present = torch.cat(  # append background present
-            (z_present, self.bg_present.expand(batch_size, 1, 1)), dim=1
-        )
-        z_where = torch.cat(  # append background where
-            (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
-        )
+        if self.background:  # append background latents
+            z_depth = torch.cat(
+                (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
+            )
+            z_present = torch.cat(
+                (z_present, self.bg_present.expand(batch_size, 1, 1)), dim=1
+            )
+            z_where = torch.cat(
+                (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
+            )
         z_what_shape = z_what.shape
         z_where_shape = z_where.shape
         z_depth_shape = z_depth.shape
@@ -431,11 +449,17 @@ class Decoder(nn.Module):
             z_what, z_where, z_present, z_depth
         )
         # merge reconstructions
-        objects, object_weights = reconstructions[:, 1:], depths[:, 1:]
-        merged = self.merge_reconstructions(
+        if self.background:
+            objects, object_weights = reconstructions[:, 1:], depths[:, 1:]
+        else:
+            objects, object_weights = reconstructions, depths
+        output = self.merge_reconstructions(
             reconstructions=objects, weights=object_weights
         )
-        output = self.fill_background(merged=merged, backgrounds=reconstructions[:, 0])
+        if self.background:
+            output = self.fill_background(
+                merged=output, backgrounds=reconstructions[:, 0]
+            )
         return output
 
 
@@ -460,6 +484,7 @@ class SSDIR(pl.LightningModule):
         z_present_p_prior: float = 0.01,
         drop: bool = True,
         square_boxes: bool = False,
+        background: bool = True,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         normalize_elbo: bool = False,
@@ -467,6 +492,7 @@ class SSDIR(pl.LightningModule):
         present_coef: float = 1.0,
         depth_coef: float = 1.0,
         rec_coef: float = 1.0,
+        score_boxes_only: bool = False,
         train_what_encoder: bool = True,
         train_what_decoder: bool = True,
         train_where: bool = True,
@@ -500,6 +526,7 @@ class SSDIR(pl.LightningModule):
         :param z_present_p_prior: present prob prior
         :param drop: drop empty objects' latents
         :param square_boxes: use square boxes instead of rectangular
+        :param background: learn background latents
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
         :param normalize_elbo: normalize elbo components by tenors' numels
@@ -507,6 +534,7 @@ class SSDIR(pl.LightningModule):
         :param present_coef: z_present loss component coefficient
         :param depth_coef: z_depth loss component coefficient
         :param rec_coef: reconstruction error component coefficient
+        :param score_boxes_only: score reconstructions only inside bounding boxes
         :param train_what_encoder: train what encoder
         :param train_what_decoder: train what decoder
         :param train_where: train where encoder
@@ -539,12 +567,14 @@ class SSDIR(pl.LightningModule):
             train_backbone_layers=train_backbone_layers,
             clone_backbone=clone_backbone,
             reset_non_present=reset_non_present,
+            background=background,
         )
         self.decoder = Decoder(
             ssd=ssd_model,
             z_what_size=z_what_size,
             drop_empty=drop,
             train_what=train_what_decoder,
+            background=background,
         )
 
         self.optimizer = optimizers[optimizer]
@@ -576,12 +606,14 @@ class SSDIR(pl.LightningModule):
         self.z_what_size = z_what_size
         self.z_present_p_prior = z_present_p_prior
         self.drop = drop
+        self.background = background
 
         self.normalize_elbo = normalize_elbo
         self._what_coef = what_coef
         self._present_coef = present_coef
         self._depth_coef = depth_coef
         self._rec_coef = rec_coef
+        self.score_boxes_only = score_boxes_only
 
         self.reset_non_present = reset_non_present
         self.visualize_inference = visualize_inference
@@ -596,6 +628,8 @@ class SSDIR(pl.LightningModule):
                 ssd_model.backbone.feature_maps, ssd_model.backbone.boxes_per_loc
             )
         )
+
+        self.save_hyperparameters()
 
     @staticmethod
     def add_model_specific_args(parent_parser: ArgumentParser):
@@ -703,6 +737,14 @@ class SSDIR(pl.LightningModule):
             help="Use square boxes only",
         )
         parser.add_argument(
+            "--background",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+            help="Learn background latents",
+        )
+        parser.add_argument(
             "--z_what_scale_const",
             type=float,
             default=None,
@@ -745,6 +787,14 @@ class SSDIR(pl.LightningModule):
             type=float,
             default=1.0,
             help="Reconstruction error component coefficient",
+        )
+        parser.add_argument(
+            "--score_boxes_only",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Score reconstructions only inside bounding boxes",
         )
         parser.add_argument(
             "--train_what_encoder",
@@ -900,7 +950,11 @@ class SSDIR(pl.LightningModule):
         """Calculate what sampling elbo coefficient."""
         coef = self._what_coef
         if self.normalize_elbo:
-            coef /= self.batch_size * (self.n_ssd_features + 1) * self.z_what_size
+            coef /= (
+                self.batch_size
+                * (self.n_ssd_features + self.background * 1)
+                * self.z_what_size
+            )
         return coef
 
     @property
@@ -908,7 +962,7 @@ class SSDIR(pl.LightningModule):
         """Calculate what sampling elbo coefficient."""
         coef = self._present_coef
         if self.normalize_elbo:
-            coef /= self.batch_size * (self.n_ssd_features + 1)
+            coef /= self.batch_size * (self.n_ssd_features + self.background * 1)
         return coef
 
     @property
@@ -916,7 +970,7 @@ class SSDIR(pl.LightningModule):
         """Calculate what sampling elbo coefficient."""
         coef = self._depth_coef
         if self.normalize_elbo:
-            coef /= self.batch_size * (self.n_ssd_features + 1)
+            coef /= self.batch_size * (self.n_ssd_features + self.background * 1)
         return coef
 
     @property
@@ -934,8 +988,8 @@ class SSDIR(pl.LightningModule):
         _, z_where, *_ = self.encoder(x)
 
         with pyro.plate("data", batch_size):
-            z_what_loc = x.new_zeros(  # with background
-                batch_size, self.n_ssd_features + 1, self.z_what_size
+            z_what_loc = x.new_zeros(
+                batch_size, self.n_ssd_features + self.background * 1, self.z_what_size
             )
             z_what_scale = torch.ones_like(z_what_loc)
 
@@ -962,18 +1016,20 @@ class SSDIR(pl.LightningModule):
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
 
-            output = self.decoder((z_what, z_where, z_present, z_depth))
-
+            output = self.decoder((z_what, z_where, z_present, z_depth)).permute(
+                0, 2, 3, 1
+            )
+            obs = denormalize(
+                x.permute(0, 2, 3, 1),
+                pixel_mean=self.pixel_means,
+                pixel_std=self.pixel_stds,
+            )
+            if self.score_boxes_only:
+                mask = output != 0
+                output = torch.where(mask, output, output.new_tensor(0.0))
+                obs = torch.where(mask, obs, obs.new_tensor(0.0))
             with poutine.scale(scale=self.rec_coef):
-                pyro.sample(
-                    "obs",
-                    dist.Bernoulli(output.permute(0, 2, 3, 1)).to_event(3),
-                    obs=denormalize(
-                        x.permute(0, 2, 3, 1),
-                        pixel_mean=self.pixel_means,
-                        pixel_std=self.pixel_stds,
-                    ),
-                )
+                pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=obs)
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
@@ -1125,16 +1181,13 @@ class SSDIR(pl.LightningModule):
         images, boxes, _ = batch
         loss = criterion(self.model, self.guide, images)
 
-        if loss.isnan():
-            prefix = "NaN_"
-        else:
-            prefix = ""
+        if torch.isnan(loss):
+            print("Skipping training with this batch due to NaN loss.")
+            return None
 
-        self.log(f"{prefix}{stage}_loss", loss, prog_bar=False, logger=True)
+        self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
         for site, site_loss in per_site_loss(self.model, self.guide, images).items():
-            self.log(
-                f"{prefix}{stage}_loss_{site}", site_loss, prog_bar=False, logger=True
-            )
+            self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
@@ -1150,7 +1203,7 @@ class SSDIR(pl.LightningModule):
 
                 self.logger.experiment.log(
                     {
-                        f"{prefix}{stage}_mse": self.mse[stage](
+                        f"{stage}_mse": self.mse[stage](
                             reconstructions.permute(0, 2, 3, 1),
                             denormalize(
                                 vis_images.permute(0, 2, 3, 1),
@@ -1191,7 +1244,7 @@ class SSDIR(pl.LightningModule):
                     )
                     self.logger.experiment.log(
                         {
-                            f"{prefix}{stage}_inference_image": wandb.Image(
+                            f"{stage}_inference_image": wandb.Image(
                                 inference_image,
                                 boxes=wandb_inference_boxes,
                                 caption="model inference",
@@ -1212,14 +1265,16 @@ class SSDIR(pl.LightningModule):
                 ) = self.encoder(vis_images)
             if self.reset_non_present:
                 present_mask = torch.gt(z_present_p, 1e-3)
-                what_present_mask = torch.hstack(  # consider background
-                    (
-                        present_mask,
-                        present_mask.new_full((1,), fill_value=True).expand(
-                            present_mask.shape[0], 1, 1
-                        ),
+                what_present_mask = present_mask
+                if self.background:
+                    what_present_mask = torch.hstack(
+                        (
+                            present_mask,
+                            present_mask.new_full((1,), fill_value=True).expand(
+                                present_mask.shape[0], 1, 1
+                            ),
+                        )
                     )
-                )
                 z_what_loc = z_what_loc[what_present_mask.expand_as(z_what_loc)].view(
                     -1, z_what_loc.shape[-1]
                 )
@@ -1243,12 +1298,9 @@ class SSDIR(pl.LightningModule):
             }
             for latent_name, latent in latents_dict.items():
                 self.logger.experiment.log(
-                    {f"{prefix}{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
+                    {f"{stage}_{latent_name}": wandb.Histogram(latent.cpu())},
                     step=self.global_step,
                 )
-        if torch.isnan(loss):
-            print("Skipping training with this batch due to NaN loss.")
-            return None
 
         return loss
 

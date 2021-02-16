@@ -9,7 +9,10 @@ from pytorch_ssdir.modeling.what import WhatDecoder, WhatEncoder
 @pytest.mark.parametrize("feature_channels", [[5], [3, 7], [2, 4, 8]])
 @pytest.mark.parametrize("batch_size", [1, 2, 3])
 @pytest.mark.parametrize("n_hidden", [-1, 0, 1, 2])
-def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size, n_hidden):
+@pytest.mark.parametrize("background", [True, False])
+def test_what_encoder_dimensions(
+    z_what_size, feature_channels, batch_size, n_hidden, background
+):
     """Verify what encoder z dimensions."""
     inputs = [
         torch.rand(batch_size, feature_channel, grid_size, grid_size)
@@ -20,6 +23,7 @@ def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size, n_hi
         feature_channels=feature_channels,
         feature_maps=list(range(1, len(feature_channels) + 1)),
         n_hidden=n_hidden,
+        background=background,
     )
     locs, scales = encoder(inputs)
     assert (
@@ -28,7 +32,7 @@ def test_what_encoder_dimensions(z_what_size, feature_channels, batch_size, n_hi
         == (
             batch_size,
             sum(grid_size ** 2 for grid_size in range(1, len(feature_channels) + 1))
-            + 1,
+            + background * 1,
             z_what_size,
         )
     )

@@ -16,22 +16,28 @@ class WhatEncoder(nn.Module):
         feature_channels: List[int],
         feature_maps: List[int],
         z_what_scale_const: Optional[float] = None,
+        background: bool = True,
     ):
         super().__init__()
         self.out_size = z_what_size
         self.feature_channels = feature_channels
         self.feature_maps = feature_maps
         self.n_hidden = n_hidden
+        self.background = background
         feature_idx = self.feature_maps.index(min(self.feature_maps))
         self.loc_encoders = self._build_what_encoders()
-        self.bg_loc_encoder = self._build_feature_encoder(
-            self.feature_channels[feature_idx]
+        self.bg_loc_encoder = (
+            self._build_feature_encoder(self.feature_channels[feature_idx])
+            if background
+            else None
         )
         self.z_what_scale_const = z_what_scale_const
         if z_what_scale_const is None:
             self.scale_encoders = self._build_what_encoders()
-            self.bg_scale_encoder = self._build_feature_encoder(
-                self.feature_channels[feature_idx]
+            self.bg_scale_encoder = (
+                self._build_feature_encoder(self.feature_channels[feature_idx])
+                if background
+                else None
             )
         self.init_encoders()
 
@@ -97,22 +103,25 @@ class WhatEncoder(nn.Module):
                 )
             else:
                 scales.append(torch.full_like(locs[-1], fill_value=scale_enc))
-        bg_feature_idx = self.feature_maps.index(min(self.feature_maps))
-        locs.append(
-            self.bg_loc_encoder(features[bg_feature_idx])
-            .permute(0, 2, 3, 1)
-            .contiguous()
-            .view(batch_size, -1, self.out_size)
-        )
-        if self.z_what_scale_const is None:
-            scales.append(
-                torch.exp(self.bg_scale_encoder(features[bg_feature_idx]))
+        if self.background:
+            bg_feature_idx = self.feature_maps.index(min(self.feature_maps))
+            locs.append(
+                self.bg_loc_encoder(features[bg_feature_idx])
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, self.out_size)
             )
-        else:
-            scales.append(torch.full_like(locs[-1], fill_value=self.z_what_scale_const))
+            if self.z_what_scale_const is None:
+                scales.append(
+                    torch.exp(self.bg_scale_encoder(features[bg_feature_idx]))
+                    .permute(0, 2, 3, 1)
+                    .contiguous()
+                    .view(batch_size, -1, self.out_size)
+                )
+            else:
+                scales.append(
+                    torch.full_like(locs[-1], fill_value=self.z_what_scale_const)
+                )
 
         locs = torch.cat(locs, dim=1)
         scales = torch.cat(scales, dim=1)
@@ -121,11 +130,13 @@ class WhatEncoder(nn.Module):
 
     def init_encoders(self):
         """Initialize model params."""
-        modules = [self.loc_encoders.modules(), self.bg_loc_encoder.modules()]
+        modules = [self.loc_encoders.modules()]
+        if self.background:
+            modules.append(self.bg_loc_encoder.modules())
         if self.z_what_scale_const is None:
-            modules.extend(
-                [self.scale_encoders.modules(), self.bg_scale_encoder.modules()]
-            )
+            modules.append(self.scale_encoders.modules())
+            if self.background:
+                modules.append(self.bg_scale_encoder.modules())
         for module in chain(*modules):
             if isinstance(module, nn.Conv2d):
                 nn.init.xavier_uniform_(module.weight)
