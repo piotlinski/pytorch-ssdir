@@ -247,16 +247,16 @@ def test_pad_indices(n_present, expected, ssd_model):
 @pytest.mark.parametrize(
     "n_present, expected",
     [
-        (torch.tensor([1, 3, 2]), torch.tensor([1, 0, 0, 2, 3, 4, 5, 6, 0])),
-        (torch.tensor([1, 2, 2]), torch.tensor([1, 0, 2, 3, 4, 5])),
-        (torch.tensor([3, 1, 1]), torch.tensor([1, 2, 3, 4, 0, 0, 5, 0, 0])),
+        (torch.tensor([1, 3, 2]), torch.tensor([0, 1, 0, 0, 0, 2, 3, 4, 0, 5, 6, 0])),
+        (torch.tensor([1, 2, 2]), torch.tensor([0, 1, 0, 0, 2, 3, 0, 4, 5])),
+        (torch.tensor([3, 1, 1]), torch.tensor([0, 1, 2, 3, 0, 4, 0, 0, 0, 5, 0, 0])),
     ],
 )
 def test_pad_indices_no_background(n_present, expected, ssd_model):
     """Verify pad indices calculation."""
     decoder = Decoder(ssd=ssd_model, z_what_size=4, background=False)
     indices = decoder.pad_indices(n_present)
-    assert indices.shape == (n_present.shape[0] * (torch.max(n_present)),)
+    assert indices.shape == (n_present.shape[0] * (torch.max(n_present) + 1),)
     assert torch.max(indices) == torch.sum(n_present)
     assert torch.equal(indices, expected)
 
@@ -457,15 +457,18 @@ def test_reconstruct_objects_no_background(ssd_model, sample_latents):
     reconstructions, depths = decoder.reconstruct_objects(
         z_what, z_where, z_present, z_depth
     )
-
-    assert torch.equal(reconstructions[0][0][0].view(4), z_what[0][0] * z_where[0][0])
-    assert depths[0][0] == z_depth[0][0]
-    assert torch.equal(reconstructions[0][1][0].view(4), z_what[0][2] * z_where[0][2])
-    assert depths[0][1] == z_depth[0][2]
-    assert torch.equal(reconstructions[1][0][0].view(4), z_what[1][0] * z_where[1][0])
-    assert depths[1][0] == z_depth[1][0]
+    assert torch.eq(reconstructions[0][0][0].view(4), 0).all()
+    assert depths[0][0] == -float("inf")
+    assert torch.equal(reconstructions[0][1][0].view(4), z_what[0][0] * z_where[0][0])
+    assert depths[0][1] == z_depth[0][0]
+    assert torch.equal(reconstructions[1][0][0].view(4), z_what[0][2] * z_where[0][2])
+    assert depths[1][0] == z_depth[0][2]
     assert torch.eq(reconstructions[1][1][0].view(4), 0).all()
     assert depths[1][1] == -float("inf")
+    assert torch.equal(reconstructions[2][0][0].view(4), z_what[1][0] * z_where[1][0])
+    assert depths[2][0] == z_depth[1][0]
+    assert torch.eq(reconstructions[2][1][0].view(4), 0).all()
+    assert depths[2][1] == -float("inf")
 
 
 def test_reconstruct_objects_no_drop(ssd_model, sample_latents):
