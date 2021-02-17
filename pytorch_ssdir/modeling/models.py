@@ -319,6 +319,7 @@ class Decoder(nn.Module):
                     ),
                     dim=0,
                 )
+                start_pad = 0
             else:
                 idx_range = torch.arange(
                     start=start_idx,
@@ -326,8 +327,9 @@ class Decoder(nn.Module):
                     dtype=torch.long,
                     device=n_present.device,
                 )
+                start_pad = 1
             indices.append(
-                functional.pad(idx_range, pad=[0, max_objects - chunk_objects])
+                functional.pad(idx_range, pad=[start_pad, max_objects - chunk_objects])
             )
         return torch.cat(indices)
 
@@ -347,7 +349,7 @@ class Decoder(nn.Module):
         images = torch.cat((image_starter, transformed_images), dim=0)
         z_depth = torch.cat((z_depth_starter, z_depth), dim=0)
         max_present = torch.max(n_present)
-        padded_shape = max_present.item()
+        padded_shape = max_present.item() + (not self.background) * 1
         indices = self.pad_indices(n_present)
         images = images[indices].view(
             -1,
@@ -430,10 +432,11 @@ class Decoder(nn.Module):
             depths = z_depth.where(
                 z_present == 1.0, z_depth.new_full((1,), fill_value=-float("inf"))
             )
-            reconstructions = torch.cat(
-                (reconstructions[:, [-1]], reconstructions[:, :-1]), dim=1
-            )
-            depths = torch.cat((depths[:, [-1]], depths[:, :-1]), dim=1)
+            if self.background:
+                reconstructions = torch.cat(
+                    (reconstructions[:, [-1]], reconstructions[:, :-1]), dim=1
+                )
+                depths = torch.cat((depths[:, [-1]], depths[:, :-1]), dim=1)
         return reconstructions, depths
 
     def forward(
