@@ -82,6 +82,7 @@ class SSDIR(pl.LightningModule):
         depth_coef: float = 1.0,
         rec_coef: float = 1.0,
         score_boxes_only: bool = False,
+        normalize_reconstructions: bool = True,
         train_what_encoder: bool = True,
         train_what_decoder: bool = True,
         train_where: bool = True,
@@ -124,6 +125,7 @@ class SSDIR(pl.LightningModule):
         :param depth_coef: z_depth loss component coefficient
         :param rec_coef: reconstruction error component coefficient
         :param score_boxes_only: score reconstructions only inside bounding boxes
+        :param normalize_reconstructions: normalize reconstructions before scoring
         :param train_what_encoder: train what encoder
         :param train_what_decoder: train what decoder
         :param train_where: train where encoder
@@ -208,6 +210,7 @@ class SSDIR(pl.LightningModule):
         self._depth_coef = depth_coef
         self._rec_coef = rec_coef
         self.score_boxes_only = score_boxes_only
+        self.normalize_reconstructions = normalize_reconstructions
 
         self.reset_non_present = reset_non_present
         self.visualize_inference = visualize_inference
@@ -630,6 +633,8 @@ class SSDIR(pl.LightningModule):
                 mask = output != 0
                 output = torch.where(mask, output, output.new_tensor(0.0))
                 obs = torch.where(mask, obs, obs.new_tensor(0.0))
+            if self.normalize_reconstructions:
+                output = self.normalize_output(output)
             with poutine.scale(scale=self.rec_coef):
                 pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=obs)
 
