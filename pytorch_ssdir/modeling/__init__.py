@@ -1,3 +1,4 @@
+from pytorch_ssdir.modeling.decoder import Decoder
 from pytorch_ssdir.modeling.depth import DepthEncoder
 from pytorch_ssdir.modeling.encoder import Encoder
 from pytorch_ssdir.modeling.model import SSDIR, Decoder
