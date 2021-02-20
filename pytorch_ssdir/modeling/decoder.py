@@ -114,15 +114,23 @@ class Decoder(nn.Module):
         z_depth = z_depth[indices].view(-1, padded_shape)
         return images, z_depth
 
-    @staticmethod
     def merge_reconstructions(
-        reconstructions: torch.Tensor, weights: torch.Tensor
+        self, reconstructions: torch.Tensor, weights: torch.Tensor
     ) -> torch.Tensor:
         """Combine decoder images into one by weighted sum."""
-        weighted_images = reconstructions * functional.softmax(weights, dim=1).view(
-            *weights.shape[:2], 1, 1, 1
+        if self.background:
+            objects, object_weights = reconstructions[:, 1:], weights[:, 1:]
+        else:
+            objects, object_weights = reconstructions, weights
+        weighted_images = objects * functional.softmax(object_weights, dim=1).view(
+            *object_weights.shape[:2], 1, 1, 1
         )
-        return torch.sum(weighted_images, dim=1)
+        merged = torch.sum(weighted_images, dim=1)
+        if self.background:
+            merged = self.fill_background(
+                merged=merged, backgrounds=reconstructions[:, 0]
+            )
+        return merged
 
     @staticmethod
     def fill_background(
@@ -200,20 +208,8 @@ class Decoder(nn.Module):
         .. (batch_size x channels x image_size x image_size)
         """
         z_what, z_where, z_present, z_depth = latents
-        # render reconstructions
         reconstructions, depths = self.reconstruct_objects(
             z_what, z_where, z_present, z_depth
         )
-        # merge reconstructions
-        if self.background:
-            objects, object_weights = reconstructions[:, 1:], depths[:, 1:]
-        else:
-            objects, object_weights = reconstructions, depths
-        output = self.merge_reconstructions(
-            reconstructions=objects, weights=object_weights
-        )
-        if self.background:
-            output = self.fill_background(
-                merged=output, backgrounds=reconstructions[:, 0]
-            )
+        output = self.merge_reconstructions(reconstructions, depths)
         return output

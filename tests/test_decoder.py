@@ -81,9 +81,10 @@ def test_pad_reconstructions(ssd_model):
         ),
     ],
 )
-def test_merge_reconstructions(inputs, weights, expected):
+def test_merge_reconstructions(inputs, weights, expected, ssd_model):
     """Verify reconstructions merging."""
-    merged = Decoder.merge_reconstructions(inputs, weights=weights)
+    decoder = Decoder(ssd=ssd_model, z_what_size=4)
+    merged = decoder.merge_reconstructions(inputs, weights=weights)
     assert merged.shape == (inputs.shape[0], *inputs.shape[2:])
     assert torch.all(torch.le(torch.abs(merged - expected), 1e-3))
 
