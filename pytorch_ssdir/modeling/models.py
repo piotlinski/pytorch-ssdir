@@ -43,11 +43,15 @@ lr_schedulers = {
     "ExponentialLR": (torch.optim.lr_scheduler.ExponentialLR, "epoch", None),
     "CosineAnnealingLR": (torch.optim.lr_scheduler.CosineAnnealingLR, "step", None),
     "ReduceLROnPlateau": (
-        torch.optim.lr_scheduler.ReduceLROnPlateau, "epoch", "val_loss"
+        torch.optim.lr_scheduler.ReduceLROnPlateau,
+        "epoch",
+        "val_loss",
     ),
     "CyclicLR": (torch.optim.lr_scheduler.CyclicLR, "step", None),
     "CosineAnnealingWarmRestarts": (
-        torch.optim.lr_scheduler.CosineAnnealingWarmRestarts, "step", None
+        torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
+        "step",
+        None,
     ),
 }
 
@@ -591,6 +595,9 @@ class SSDIR(pl.LightningModule):
         self.optimizer_kwargs = dict(optimizer_kwargs)
         self.lr = learning_rate
         self.ssd_lr_multiplier = ssd_lr_multiplier
+        self.lr_scheduler: Optional[object]
+        self.lr_freq: Optional[str]
+        self.lr_metric: Optional[str]
         self.lr_scheduler, self.lr_freq, self.lr_metric = lr_schedulers.get(
             lr_scheduler, (None, None, None)
         )
