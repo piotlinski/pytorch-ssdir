@@ -584,6 +584,13 @@ def test_ssdir_encoder_forward(
     assert z_depth.dtype == torch.float
 
 
+def test_ssdir_normalize_output():
+    """Verify normalizing output fits 0-1."""
+    outputs = torch.rand(5, 3, 8, 8)
+    normalized = SSDIR.normalize_output(outputs)
+    assert (torch.max(normalized.view(5, -1), dim=1)[0] == 1).all()
+
+
 @pytest.mark.parametrize("z_what_size", [2, 4])
 @pytest.mark.parametrize("batch_size", [2, 3])
 @pytest.mark.parametrize("drop", [True, False])

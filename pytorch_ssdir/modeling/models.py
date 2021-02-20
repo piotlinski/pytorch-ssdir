@@ -950,12 +950,20 @@ class SSDIR(pl.LightningModule):
         z_depth = dist.Normal(z_depth_loc, z_depth_scale).sample()
         return z_what, z_where, z_present, z_depth
 
+    @staticmethod
+    def normalize_output(reconstructions: torch.tensor) -> torch.tensor:
+        """Normalize output to fit range 0-1."""
+        batch_size = reconstructions.shape[0]
+        max_values, _ = reconstructions.view(batch_size, -1).max(dim=1, keepdim=True)
+        max_values = max_values.unsqueeze(-1).unsqueeze(-1).expand_as(reconstructions)
+        return reconstructions / max_values
+
     def decoder_forward(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
     ) -> torch.Tensor:
         """Perform forward pass through decoder network."""
         outputs = self.decoder(latents)
-        return outputs
+        return self.normalize_output(outputs)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """Pass data through the model."""
