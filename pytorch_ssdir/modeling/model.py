@@ -394,6 +394,14 @@ class SSDIR(pl.LightningModule):
             help="Score reconstructions only inside bounding boxes",
         )
         parser.add_argument(
+            "--normalize_reconstructions",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Normalize reconstructions before scoring",
+        )
+        parser.add_argument(
             "--train_what_encoder",
             type=str2bool,
             nargs="?",
