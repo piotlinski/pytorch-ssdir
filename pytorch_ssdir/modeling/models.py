@@ -37,13 +37,22 @@ warnings.filterwarnings(
 
 optimizers = {"Adam": torch.optim.Adam, "SGD": torch.optim.SGD}
 lr_schedulers = {
-    "StepLR": torch.optim.lr_scheduler.StepLR,
-    "MultiStepLR": torch.optim.lr_scheduler.MultiStepLR,
-    "ExponentialLR": torch.optim.lr_scheduler.ExponentialLR,
-    "CosineAnnealingLR": torch.optim.lr_scheduler.CosineAnnealingLR,
-    "ReduceLROnPlateau": torch.optim.lr_scheduler.ReduceLROnPlateau,
-    "CyclicLR": torch.optim.lr_scheduler.CyclicLR,
-    "CosineAnnealingWarmRestarts": torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
+    # name: optimizer, interval, var to monitor
+    "StepLR": (torch.optim.lr_scheduler.StepLR, "step", None),
+    "MultiStepLR": (torch.optim.lr_scheduler.MultiStepLR, "step", None),
+    "ExponentialLR": (torch.optim.lr_scheduler.ExponentialLR, "epoch", None),
+    "CosineAnnealingLR": (torch.optim.lr_scheduler.CosineAnnealingLR, "step", None),
+    "ReduceLROnPlateau": (
+        torch.optim.lr_scheduler.ReduceLROnPlateau,
+        "epoch",
+        "val_loss",
+    ),
+    "CyclicLR": (torch.optim.lr_scheduler.CyclicLR, "step", None),
+    "CosineAnnealingWarmRestarts": (
+        torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
+        "step",
+        None,
+    ),
 }
 
 
@@ -586,7 +595,12 @@ class SSDIR(pl.LightningModule):
         self.optimizer_kwargs = dict(optimizer_kwargs)
         self.lr = learning_rate
         self.ssd_lr_multiplier = ssd_lr_multiplier
-        self.lr_scheduler = lr_schedulers.get(lr_scheduler)
+        self.lr_scheduler: Optional[object]
+        self.lr_freq: Optional[str]
+        self.lr_metric: Optional[str]
+        self.lr_scheduler, self.lr_freq, self.lr_metric = lr_schedulers.get(
+            lr_scheduler, (None, None, None)
+        )
         if lr_scheduler_kwargs is None:
             lr_scheduler_kwargs = []
         self.lr_scheduler_kwargs = dict(lr_scheduler_kwargs)
@@ -936,12 +950,20 @@ class SSDIR(pl.LightningModule):
         z_depth = dist.Normal(z_depth_loc, z_depth_scale).sample()
         return z_what, z_where, z_present, z_depth
 
+    @staticmethod
+    def normalize_output(reconstructions: torch.tensor) -> torch.tensor:
+        """Normalize output to fit range 0-1."""
+        batch_size = reconstructions.shape[0]
+        max_values, _ = reconstructions.view(batch_size, -1).max(dim=1, keepdim=True)
+        max_values = max_values.unsqueeze(-1).unsqueeze(-1).expand_as(reconstructions)
+        return reconstructions / max_values
+
     def decoder_forward(
         self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
     ) -> torch.Tensor:
         """Perform forward pass through decoder network."""
         outputs = self.decoder(latents)
-        return outputs
+        return self.normalize_output(outputs)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """Pass data through the model."""
@@ -1342,8 +1364,10 @@ class SSDIR(pl.LightningModule):
             )
             configuration["lr_scheduler"] = {
                 "scheduler": lr_scheduler,
-                "interval": "step",
+                "interval": self.lr_freq,
             }
+            if self.lr_metric is not None:
+                configuration["lr_scheduler"]["monitor"] = self.lr_metric
         return configuration
 
     def train_dataloader(self) -> DataLoader:
