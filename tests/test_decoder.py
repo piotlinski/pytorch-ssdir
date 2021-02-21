@@ -66,6 +66,31 @@ def test_pad_reconstructions(ssd_model):
     assert padded_z_depth[1][2] == z_depth[2]
 
 
+def test_reshape_reconstructions(ssd_model):
+    """Verify reshaping reconstructions in no-drop Decoder."""
+    decoder = Decoder(ssd=ssd_model, z_what_size=4)
+    images = (
+        torch.arange(1, 5, dtype=torch.float)
+        .view(-1, 1, 1, 1)
+        .expand(4, 3, decoder.where_stn.image_size, decoder.where_stn.image_size)
+    )
+    z_depth = torch.tensor([[1, 2], [3, 4]], dtype=torch.float).unsqueeze(-1)
+    z_present = torch.tensor([[True, True], [False, True]]).unsqueeze(-1)
+    reshaped_images, reshaped_z_depth = decoder.reshape_reconstructions(
+        transformed_images=images, z_depth=z_depth, z_present=z_present
+    )
+    assert reshaped_images.shape == (2, 2, 3, 300, 300)
+    assert reshaped_z_depth.shape == (2, 2, 1)
+    assert torch.equal(reshaped_images[0][0], images[1])
+    assert torch.equal(reshaped_images[0][1], images[0])
+    assert torch.equal(reshaped_images[1][0], images[3])
+    assert torch.equal(reshaped_images[1][1], images[2])
+    assert reshaped_z_depth[0][0] == z_depth[0][1]
+    assert reshaped_z_depth[0][1] == z_depth[0][0]
+    assert reshaped_z_depth[1][0] == z_depth[1][1]
+    assert reshaped_z_depth[1][1] == -float("inf")
+
+
 @pytest.mark.parametrize(
     "inputs, weights, expected",
     [

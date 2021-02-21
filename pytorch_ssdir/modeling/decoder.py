@@ -121,7 +121,6 @@ class Decoder(nn.Module):
         z_present: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Reshape no-drop reconstructions for merging."""
-        # TODO: add test
         batch_size = z_present.shape[0]
         images = transformed_images.view(
             batch_size,
