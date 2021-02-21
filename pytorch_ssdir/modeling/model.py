@@ -661,7 +661,7 @@ class SSDIR(pl.LightningModule):
             z_what, z_where, z_present, z_depth = self.decoder.handle_latents(
                 z_what, z_where, z_present, z_depth
             )
-            decoded_images, z_where_flat = self.decode_objects(z_what, z_where)
+            decoded_images, z_where_flat = self.decoder.decode_objects(z_what, z_where)
             reconstructions, depths = self.transform_objects(
                 decoded_images, z_where_flat, z_present, z_depth
             )
