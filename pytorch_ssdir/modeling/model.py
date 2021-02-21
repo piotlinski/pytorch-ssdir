@@ -671,7 +671,7 @@ class SSDIR(pl.LightningModule):
                 )
                 with poutine.scale(scale=self.rec_coef / n_present.sum()):
                     pyro.sample(
-                        "obs",
+                        "rec",
                         dist.Bernoulli(decoded_images).to_event(3),
                         obs=transformed_obs,
                     )
