@@ -681,7 +681,7 @@ class SSDIR(pl.LightningModule):
         with pyro.plate("reconstructions"):
             if self.rec_coef:
                 n_present = (
-                    torch.sum(z_present, dim=1).squeeze(-1)
+                    torch.sum(z_present, dim=1, dtype=torch.long).squeeze(-1)
                     if self.drop
                     else z_present.new_tensor(z_present.shape[0] * [z_present.shape[1]])
                 )
