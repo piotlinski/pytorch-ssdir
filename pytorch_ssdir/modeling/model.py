@@ -909,9 +909,6 @@ class SSDIR(pl.LightningModule):
                         dim=1,
                         index=sort_index.view(1, -1, 1, 1, 1).expand_as(objects),
                     )
-                    filtered_z_where = z_where[0][
-                        (z_present[0] == 1).expand_as(z_where[0])
-                    ].view(-1, z_where.shape[-1])
 
                     (
                         inference_image,
@@ -920,7 +917,7 @@ class SSDIR(pl.LightningModule):
                         image=vis_images[0],
                         boxes=vis_boxes[0],
                         reconstruction=reconstructions[0],
-                        z_where=filtered_z_where,
+                        z_where=z_where,
                         objects=sorted_objects[0],
                     )
                     self.logger.experiment.log(
