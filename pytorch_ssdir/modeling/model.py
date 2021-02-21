@@ -81,6 +81,7 @@ class SSDIR(pl.LightningModule):
         present_coef: float = 1.0,
         depth_coef: float = 1.0,
         rec_coef: float = 1.0,
+        obs_coef: float = 1.0,
         score_boxes_only: bool = False,
         normalize_reconstructions: bool = True,
         train_what_encoder: bool = True,
@@ -123,7 +124,8 @@ class SSDIR(pl.LightningModule):
         :param what_coef: z_what loss component coefficient
         :param present_coef: z_present loss component coefficient
         :param depth_coef: z_depth loss component coefficient
-        :param rec_coef: reconstruction error component coefficient
+        :param rec_coef: reconstruction error component coefficient (per-object)
+        :param obs_coef: reconstruction error component coefficient (entire image)
         :param score_boxes_only: score reconstructions only inside bounding boxes
         :param normalize_reconstructions: normalize reconstructions before scoring
         :param train_what_encoder: train what encoder
@@ -209,6 +211,7 @@ class SSDIR(pl.LightningModule):
         self._present_coef = present_coef
         self._depth_coef = depth_coef
         self._rec_coef = rec_coef
+        self._obs_coef = obs_coef
         self.score_boxes_only = score_boxes_only
         self.normalize_reconstructions = normalize_reconstructions
 
@@ -383,7 +386,13 @@ class SSDIR(pl.LightningModule):
             "--rec_coef",
             type=float,
             default=1.0,
-            help="Reconstruction error component coefficient",
+            help="Reconstruction error component coefficient (per object)",
+        )
+        parser.add_argument(
+            "--obs_coef",
+            type=float,
+            default=1.0,
+            help="Reconstruction error component coefficient (entire image)",
         )
         parser.add_argument(
             "--score_boxes_only",
@@ -572,7 +581,7 @@ class SSDIR(pl.LightningModule):
 
     @property
     def present_coef(self) -> float:
-        """Calculate what sampling elbo coefficient."""
+        """Calculate present sampling elbo coefficient."""
         coef = self._present_coef
         if self.normalize_elbo:
             coef /= self.batch_size * (self.n_ssd_features + self.background * 1)
@@ -580,7 +589,7 @@ class SSDIR(pl.LightningModule):
 
     @property
     def depth_coef(self) -> float:
-        """Calculate what sampling elbo coefficient."""
+        """Calculate depth sampling elbo coefficient."""
         coef = self._depth_coef
         if self.normalize_elbo:
             coef /= self.batch_size * (self.n_ssd_features + self.background * 1)
@@ -588,8 +597,19 @@ class SSDIR(pl.LightningModule):
 
     @property
     def rec_coef(self) -> float:
-        """Calculate what sampling elbo coefficient."""
+        """Calculate reconstruction sampling elbo coefficient (per-object).
+
+        .. note: needs to be divided by the number of reconstructed objects.
+        """
         coef = self._rec_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * 3 * 64 * 64
+        return coef
+
+    @property
+    def obs_coef(self) -> float:
+        """Calculate reconstruction sampling elbo coefficient (entire image)."""
+        coef = self._obs_coef
         if self.normalize_elbo:
             coef /= self.batch_size * 3 * self.image_size[0] * self.image_size[1]
         return coef
@@ -629,9 +649,17 @@ class SSDIR(pl.LightningModule):
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
 
-            output = self.decoder((z_what, z_where, z_present, z_depth)).permute(
-                0, 2, 3, 1
+            # TODO: add reconstruction scoring
+            reconstructions, depths = self.decoder.reconstruct_objects(
+                z_what, z_where, z_present, z_depth
             )
+            if self.rec_coef:
+                pass
+
+            output = self.decoder.merge_reconstructions(
+                reconstructions, depths
+            ).permute(0, 2, 3, 1)
+
             obs = denormalize(
                 x.permute(0, 2, 3, 1),
                 pixel_mean=self.pixel_means,
@@ -643,7 +671,7 @@ class SSDIR(pl.LightningModule):
                 obs = torch.where(mask, obs, obs.new_tensor(0.0))
             if self.normalize_reconstructions:
                 output = self.normalize_output(output)
-            with poutine.scale(scale=self.rec_coef):
+            with poutine.scale(scale=self.obs_coef):
                 pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=obs)
 
     def guide(self, x: torch.Tensor):
@@ -832,6 +860,7 @@ class SSDIR(pl.LightningModule):
 
                 if self.visualize_latents:
                     z_what, z_where, z_present, z_depth = latents
+                    # TODO utilize changes
                     objects, depths = self.decoder.reconstruct_objects(
                         z_what[0].unsqueeze(0),
                         z_where[0].unsqueeze(0),
