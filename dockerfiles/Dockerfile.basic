@@ -47,6 +47,7 @@ RUN apt-get update \
 
 COPY --from=builder $PYSETUP_PATH/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
+RUN pip install jupyter
 RUN rm -rf /tmp/requirements.txt
 
 COPY dockerfiles/entrypoint.sh /usr/local/bin/
