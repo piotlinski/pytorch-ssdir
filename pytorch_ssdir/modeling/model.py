@@ -888,11 +888,15 @@ class SSDIR(pl.LightningModule):
                 )
 
                 if self.visualize_latents:
-                    z_what, z_where, z_present, z_depth = latents
-                    # TODO utilize changes
-                    objects, depths = self.decoder.reconstruct_objects(
-                        z_what[0].unsqueeze(0),
-                        z_where[0].unsqueeze(0),
+                    z_what, z_where, z_present, z_depth = self.decoder.handle_latents(
+                        *latents
+                    )
+                    decoded_image, z_where_flat = self.decoder.decode_objects(
+                        z_what[0].unsqueeze(0), z_where[0].unsqueeze(0)
+                    )
+                    objects, depths = self.decoder.transform_objects(
+                        decoded_image,
+                        z_where_flat,
                         z_present[0].unsqueeze(0),
                         z_depth[0].unsqueeze(0),
                     )
