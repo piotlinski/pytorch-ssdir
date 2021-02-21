@@ -128,7 +128,6 @@ class WhereTransformer(nn.Module):
         :param theta: transformation matrix for transposing and scaling
         :return: inverted transformation matrix
         """
-        # TODO: add test
         last_row = theta.new_tensor([0.0, 0.0, 1.0]).expand(theta.shape[0], 1, 3)
         transformation_mtx = torch.cat((theta, last_row), dim=1)
         return transformation_mtx.inverse()[:, :-1]

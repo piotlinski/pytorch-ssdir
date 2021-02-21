@@ -61,6 +61,32 @@ def test_where_transformer_dimensions(decoded_size, image_size, hidden_size):
     assert outputs.shape == (hidden_size, 3, image_size, image_size)
 
 
+@pytest.mark.parametrize(
+    "theta, expected",
+    [
+        (
+            torch.tensor([[[2.0, 0.0, 1.0], [0.0, 4.0, 2.0]]]),
+            torch.tensor([[[0.5, 0.0, -0.5], [0.0, 0.25, -0.5]]]),
+        ),
+        (
+            torch.tensor(
+                [[[4.0, 0.0, 1.0], [0.0, 4.0, 0.5]], [[2.0, 0.0, 1.2], [0.0, 0.8, 0.4]]]
+            ),
+            torch.tensor(
+                [
+                    [[0.25, 0.0, -0.25], [0.0, 0.25, -0.125]],
+                    [[0.5, 0.0, -0.6], [0.0, 1.25, -0.5]],
+                ]
+            ),
+        ),
+    ],
+)
+def test_get_inverse_theta(theta, expected):
+    """Verify getting inverse transformation matrix."""
+    inverted = WhereTransformer.get_inverse_theta(theta)
+    assert torch.equal(inverted, expected)
+
+
 def test_where_transformer_when_empty():
     """Verify WhereTransformer when given empty input."""
     decoded_size = 64
