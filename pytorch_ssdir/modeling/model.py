@@ -665,9 +665,16 @@ class SSDIR(pl.LightningModule):
                 n_present,
             ) = self.decoder.decode_objects(z_what, z_where, z_present, z_depth)
             if self.rec_coef:
+                obs_idx = torch.repeat_interleave(
+                    torch.arange(
+                        n_present.numel(),
+                        dtype=n_present.dtype,
+                        device=n_present.device,
+                    ),
+                    n_present,
+                )
                 transformed_obs = self.rec_stn(
-                    torch.repeat_interleave(obs, n_present).permute(0, 3, 1, 2),
-                    z_where_flat,
+                    obs[obs_idx].permute(0, 3, 1, 2), z_where_flat
                 )
                 with poutine.scale(scale=self.rec_coef / n_present.sum()):
                     pyro.sample(
