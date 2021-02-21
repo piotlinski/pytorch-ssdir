@@ -664,7 +664,7 @@ class SSDIR(pl.LightningModule):
                 z_present,
                 n_present,
             ) = self.decoder.decode_objects(z_what, z_where, z_present, z_depth)
-            transformed_images = self.where_stn(decoded_images, z_where_flat)
+            transformed_images = self.decoder.where_stn(decoded_images, z_where_flat)
             if self.drop:
                 reconstructions, depths = self.decoder.pad_reconstructions(
                     transformed_images=transformed_images,
