@@ -888,17 +888,21 @@ class SSDIR(pl.LightningModule):
                 )
 
                 if self.visualize_latents:
+                    z_what, z_where, z_present, z_depth = latents
                     z_what, z_where, z_present, z_depth = self.decoder.handle_latents(
-                        *latents
+                        z_what[0].unsqueeze(0),
+                        z_where[0].unsqueeze(0),
+                        z_present[0].unsqueeze(0),
+                        z_depth[0].unsqueeze(0),
                     )
                     decoded_image, z_where_flat = self.decoder.decode_objects(
-                        z_what[0].unsqueeze(0), z_where[0].unsqueeze(0)
+                        z_what, z_where
                     )
                     objects, depths = self.decoder.transform_objects(
                         decoded_image,
                         z_where_flat,
-                        z_present[0].unsqueeze(0),
-                        z_depth[0].unsqueeze(0),
+                        z_present,
+                        z_depth,
                     )
                     _, sort_index = torch.sort(depths, dim=1, descending=True)
                     sorted_objects = objects.gather(
