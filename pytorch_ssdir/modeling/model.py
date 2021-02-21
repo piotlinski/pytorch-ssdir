@@ -666,7 +666,12 @@ class SSDIR(pl.LightningModule):
             ) = self.decoder.decode_objects(z_what, z_where, z_present, z_depth)
             if self.rec_coef:
                 obs_idx = torch.repeat_interleave(
-                    torch.arange(n_present.numel()), n_present
+                    torch.arange(
+                        n_present.numel(),
+                        dtype=n_present.dtype,
+                        device=n_present.device,
+                    ),
+                    n_present,
                 )
                 transformed_obs = self.rec_stn(
                     obs[obs_idx].permute(0, 3, 1, 2), z_where_flat
