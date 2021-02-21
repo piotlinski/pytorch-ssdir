@@ -23,6 +23,7 @@ from torch.utils.data.dataloader import DataLoader
 from pytorch_ssdir.args import parse_kwargs
 from pytorch_ssdir.modeling.decoder import Decoder
 from pytorch_ssdir.modeling.encoder import Encoder
+from pytorch_ssdir.modeling.where import WhereTransformer
 from pytorch_ssdir.run.loss import per_site_loss
 from pytorch_ssdir.run.transforms import corner_to_center_target_transform
 
@@ -214,6 +215,7 @@ class SSDIR(pl.LightningModule):
         self._obs_coef = obs_coef
         self.score_boxes_only = score_boxes_only
         self.normalize_reconstructions = normalize_reconstructions
+        self.rec_stn = WhereTransformer(image_size=64, inverse=True)
 
         self.reset_non_present = reset_non_present
         self.visualize_inference = visualize_inference
@@ -649,22 +651,51 @@ class SSDIR(pl.LightningModule):
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
 
-            # TODO: add reconstruction scoring
-            reconstructions, depths = self.decoder.reconstruct_objects(
-                z_what, z_where, z_present, z_depth
-            )
-            if self.rec_coef:
-                pass
-
-            output = self.decoder.merge_reconstructions(
-                reconstructions, depths
-            ).permute(0, 2, 3, 1)
-
             obs = denormalize(
                 x.permute(0, 2, 3, 1),
                 pixel_mean=self.pixel_means,
                 pixel_std=self.pixel_stds,
             )
+
+            (
+                decoded_images,
+                z_where_flat,
+                z_depth,
+                z_present,
+                n_present,
+            ) = self.decoder.decode_objects(z_what, z_where, z_present, z_depth)
+            if self.rec_coef:
+                obs_idx = torch.repeat_interleave(
+                    torch.arange(n_present.numel()), n_present
+                )
+                transformed_obs = self.rec_stn(
+                    obs[obs_idx].permute(0, 3, 1, 2), z_where_flat
+                )
+                with poutine.scale(scale=self.rec_coef / n_present.sum()):
+                    pyro.sample(
+                        "obs",
+                        dist.Bernoulli(decoded_images).to_event(3),
+                        obs=transformed_obs,
+                    )
+
+            transformed_images = self.where_stn(decoded_images, z_where_flat)
+            if self.drop:
+                reconstructions, depths = self.decoder.pad_reconstructions(
+                    transformed_images=transformed_images,
+                    z_depth=z_depth,
+                    n_present=n_present,
+                )
+            else:
+                reconstructions, depths = self.decoder.reshape_reconstructions(
+                    transformed_images=transformed_images,
+                    z_depth=z_depth,
+                    z_present=z_present,
+                )
+
+            output = self.decoder.merge_reconstructions(
+                reconstructions, depths
+            ).permute(0, 2, 3, 1)
+
             if self.score_boxes_only:
                 mask = output != 0
                 output = torch.where(mask, output, output.new_tensor(0.0))

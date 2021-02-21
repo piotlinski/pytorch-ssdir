@@ -170,9 +170,7 @@ class Decoder(nn.Module):
         z_where: torch.Tensor,
         z_present: torch.Tensor,
         z_depth: torch.Tensor,
-    ) -> Tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]
-    ]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Decode z_what to acquire images, z_where and number of present."""
         # TODO: simplify
         # TODO: add test
@@ -187,7 +185,7 @@ class Decoder(nn.Module):
             z_where = torch.cat(
                 (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
             )
-        n_present = None
+        n_present = z_what.new_tensor(batch_size * [z_present.shape[1]])
         if self.drop:
             present_mask = torch.eq(z_present, 1)
             n_present = torch.sum(present_mask, dim=1).squeeze(-1)
