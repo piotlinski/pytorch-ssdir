@@ -63,7 +63,7 @@ def test_ssdir_decoder_forward(
 
     z_what = torch.rand(batch_size, n_ssd_features + background * 1, z_what_size)
     z_where = torch.rand(batch_size, n_ssd_features, 4)
-    z_present = torch.randint(0, 100, (batch_size, n_ssd_features, 1))
+    z_present = torch.randint(0, 1, (batch_size, n_ssd_features, 1))
     z_depth = torch.rand(batch_size, n_ssd_features, 1)
     latents = (z_what, z_where, z_present, z_depth)
     outputs = model.decoder_forward(latents)

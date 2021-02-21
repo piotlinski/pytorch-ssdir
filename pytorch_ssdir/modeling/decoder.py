@@ -163,16 +163,14 @@ class Decoder(nn.Module):
         mask = torch.where(merged < 1e-3, 1.0, 0.0)
         return merged + backgrounds * mask
 
-    def decode_objects(
+    def handle_latents(
         self,
         z_what: torch.Tensor,
         z_where: torch.Tensor,
         z_present: torch.Tensor,
         z_depth: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Decode z_what to acquire images, z_where and number of present."""
-        # TODO: simplify
-        # TODO: add test
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Handle latents according to the model settings."""
         batch_size = z_what.shape[0]
         if self.background:  # append background latents
             z_depth = torch.cat(
@@ -184,10 +182,8 @@ class Decoder(nn.Module):
             z_where = torch.cat(
                 (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
             )
-        n_present = z_what.new_tensor(batch_size * [z_present.shape[1]])
         if self.drop:
             present_mask = torch.eq(z_present, 1)
-            n_present = torch.sum(present_mask, dim=1).squeeze(-1)
             z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what.shape[-1])
             z_where = z_where[present_mask.expand_as(z_where)].view(
                 -1, z_where.shape[-1]
@@ -195,26 +191,31 @@ class Decoder(nn.Module):
             z_depth = z_depth[present_mask.expand_as(z_depth)].view(
                 -1, z_depth.shape[-1]
             )
+        return z_what, z_where, z_present, z_depth
+
+    def decode_objects(
+        self, z_what: torch.Tensor, z_where: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Decode z_what to acquire individual objects and their z_where location."""
         z_what_flat = z_what.view(-1, z_what.shape[-1])
         z_where_flat = z_where.view(-1, z_where.shape[-1])
         decoded_images = self.what_dec(z_what_flat)
-        return decoded_images, z_where_flat, z_depth, z_present, n_present
+        return decoded_images, z_where_flat
 
-    def reconstruct_objects(
+    def transform_objects(
         self,
-        z_what: torch.Tensor,
-        z_where: torch.Tensor,
+        decoded_images: torch.Tensor,
+        z_where_flat: torch.Tensor,
         z_present: torch.Tensor,
         z_depth: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Render reconstructions and their depths from batch."""
-        (
-            decoded_images,
-            z_where_flat,
-            z_depth,
-            z_present,
-            n_present,
-        ) = self.decode_objects(z_what, z_where, z_present, z_depth)
+        n_present = (
+            torch.sum(z_present, dim=1, dtype=torch.long).squeeze(-1)
+            if self.drop
+            else z_present.new_tensor(z_present.shape[0] * [z_present.shape[1]])
+        )
+
         transformed_images = self.where_stn(decoded_images, z_where_flat)
         if self.drop:
             reconstructions, depths = self.pad_reconstructions(
@@ -237,9 +238,10 @@ class Decoder(nn.Module):
         .. and outputs reconstructed images batch
         .. (batch_size x channels x image_size x image_size)
         """
-        z_what, z_where, z_present, z_depth = latents
-        reconstructions, depths = self.reconstruct_objects(
-            z_what, z_where, z_present, z_depth
+        z_what, z_where, z_present, z_depth = self.handle_latents(*latents)
+        decoded_images, z_where_flat = self.decode_objects(z_what, z_where)
+        reconstructions, depths = self.transform_objects(
+            decoded_images, z_where_flat, z_present, z_depth
         )
         output = self.merge_reconstructions(reconstructions, depths)
         return output

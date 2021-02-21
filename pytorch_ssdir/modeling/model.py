@@ -657,27 +657,14 @@ class SSDIR(pl.LightningModule):
                 pixel_std=self.pixel_stds,
             )
 
-            (
-                decoded_images,
-                z_where_flat,
-                z_depth,
-                z_present,
-                n_present,
-            ) = self.decoder.decode_objects(z_what, z_where, z_present, z_depth)
-            transformed_images = self.decoder.where_stn(decoded_images, z_where_flat)
-            if self.drop:
-                reconstructions, depths = self.decoder.pad_reconstructions(
-                    transformed_images=transformed_images,
-                    z_depth=z_depth,
-                    n_present=n_present,
-                )
-            else:
-                reconstructions, depths = self.decoder.reshape_reconstructions(
-                    transformed_images=transformed_images,
-                    z_depth=z_depth,
-                    z_present=z_present,
-                )
-
+            # all stages from decoder.forward
+            z_what, z_where, z_present, z_depth = self.decoder.handle_latents(
+                z_what, z_where, z_present, z_depth
+            )
+            decoded_images, z_where_flat = self.decode_objects(z_what, z_where)
+            reconstructions, depths = self.transform_objects(
+                decoded_images, z_where_flat, z_present, z_depth
+            )
             output = self.decoder.merge_reconstructions(
                 reconstructions, depths
             ).permute(0, 2, 3, 1)
@@ -693,6 +680,11 @@ class SSDIR(pl.LightningModule):
 
         with pyro.plate("reconstructions"):
             if self.rec_coef:
+                n_present = (
+                    torch.sum(z_present, dim=1).squeeze(-1)
+                    if self.drop
+                    else z_present.new_tensor(z_present.shape[0] * [z_present.shape[1]])
+                )
                 obs_idx = torch.repeat_interleave(
                     torch.arange(
                         n_present.numel(),
