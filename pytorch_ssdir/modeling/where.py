@@ -81,9 +81,10 @@ class WhereEncoder(nn.Module):
 class WhereTransformer(nn.Module):
     """Transforms WhereDecoder output image using where box."""
 
-    def __init__(self, image_size: int):
+    def __init__(self, image_size: int, inverse: bool = False):
         super().__init__()
         self.image_size = image_size
+        self.inverse = inverse
 
     @staticmethod
     def scale_boxes(where_boxes: torch.Tensor) -> torch.Tensor:
@@ -120,6 +121,17 @@ class WhereTransformer(nn.Module):
             index=torch.tensor([3, 0, 1, 0, 4, 2], device=where_boxes.device),
         ).view(n_boxes, 2, 3)
 
+    @staticmethod
+    def get_inverse_theta(theta: torch.Tensor) -> torch.Tensor:
+        """Get inverse transformation matrix.
+
+        :param theta: transformation matrix for transposing and scaling
+        :return: inverted transformation matrix
+        """
+        last_row = theta.new_tensor([0.0, 0.0, 1.0]).expand(theta.shape[0], 1, 3)
+        transformation_mtx = torch.cat((theta, last_row), dim=1)
+        return transformation_mtx.inverse()[:, :-1]
+
     def forward(
         self, decoded_images: torch.Tensor, where_boxes: torch.Tensor
     ) -> torch.Tensor:
@@ -134,6 +146,8 @@ class WhereTransformer(nn.Module):
         if where_boxes.numel():
             scaled_boxes = self.scale_boxes(where_boxes)
             theta = self.convert_boxes_to_theta(where_boxes=scaled_boxes)
+            if self.inverse:
+                theta = self.get_inverse_theta(theta)
             grid = functional.affine_grid(
                 theta=theta,
                 size=[n_objects, channels, self.image_size, self.image_size],

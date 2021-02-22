@@ -1,7 +1,6 @@
-"""SSDIR encoder, decoder, model and guide declarations."""
+"""SSDIR model and guide declarations."""
 import warnings
 from argparse import ArgumentParser
-from copy import deepcopy
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
@@ -12,7 +11,6 @@ import pyro.poutine as poutine
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import torch.nn.functional as functional
 import wandb
 from pyro.infer import Trace_ELBO
 from pytorch_ssd.args import str2bool
@@ -23,10 +21,9 @@ from pytorch_ssd.modeling.visualize import denormalize
 from torch.utils.data.dataloader import DataLoader
 
 from pytorch_ssdir.args import parse_kwargs
-from pytorch_ssdir.modeling.depth import DepthEncoder
-from pytorch_ssdir.modeling.present import PresentEncoder
-from pytorch_ssdir.modeling.what import WhatDecoder, WhatEncoder
-from pytorch_ssdir.modeling.where import WhereEncoder, WhereTransformer
+from pytorch_ssdir.modeling.decoder import Decoder
+from pytorch_ssdir.modeling.encoder import Encoder
+from pytorch_ssdir.modeling.where import WhereTransformer
 from pytorch_ssdir.run.loss import per_site_loss
 from pytorch_ssdir.run.transforms import corner_to_center_target_transform
 
@@ -54,425 +51,6 @@ lr_schedulers = {
         None,
     ),
 }
-
-
-class Encoder(nn.Module):
-    """Module encoding input image to latent representation.
-
-    .. latent representation consists of:
-       - $$z_{what} ~ N(\\mu^{what}, \\sigma^{what})$$
-       - $$z_{where} in R^4$$
-       - $$z_{present} ~ Bernoulli(p_{present})$$
-       - $$z_{depth} ~ N(\\mu_{depth}, \\sigma_{depth})$$
-    """
-
-    def __init__(
-        self,
-        ssd: SSD,
-        z_what_size: int = 64,
-        z_what_hidden: int = 2,
-        z_what_scale_const: Optional[float] = None,
-        z_depth_scale_const: Optional[float] = None,
-        z_present_eps: float = 1e-3,
-        square_boxes: bool = False,
-        train_what: bool = True,
-        train_where: bool = True,
-        train_present: bool = True,
-        train_depth: bool = True,
-        train_backbone: bool = True,
-        train_backbone_layers: int = -1,
-        clone_backbone: bool = False,
-        reset_non_present: bool = True,
-        background: bool = True,
-    ):
-        super().__init__()
-        self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
-        self.clone_backbone = clone_backbone
-        self.reset = reset_non_present
-        self.background = background
-        if self.clone_backbone:
-            self.ssd_backbone_cloned = deepcopy(self.ssd_backbone).requires_grad_(True)
-        if train_backbone_layers >= 0 and train_backbone:
-            for module in list(self.ssd_backbone.children())[train_backbone_layers:][
-                ::-1
-            ]:
-                module.requires_grad_(False)
-        self.z_present_eps = z_present_eps
-        self.what_enc = WhatEncoder(
-            z_what_size=z_what_size,
-            n_hidden=z_what_hidden,
-            z_what_scale_const=z_what_scale_const,
-            feature_channels=ssd.backbone.out_channels,
-            feature_maps=ssd.backbone.feature_maps,
-            background=background,
-        ).requires_grad_(train_what)
-        self.where_enc = WhereEncoder(
-            ssd_box_predictor=ssd.predictor,
-            ssd_anchors=ssd.anchors,
-            ssd_center_variance=ssd.center_variance,
-            ssd_size_variance=ssd.size_variance,
-            square_boxes=square_boxes,
-        ).requires_grad_(train_where)
-        self.present_enc = PresentEncoder(
-            ssd_box_predictor=ssd.predictor
-        ).requires_grad_(train_present)
-        self.depth_enc = DepthEncoder(
-            feature_channels=ssd.backbone.out_channels,
-            z_depth_scale_const=z_depth_scale_const,
-        ).requires_grad_(train_depth)
-
-        self.register_buffer(
-            "indices",
-            self.latents_indices(
-                feature_maps=ssd.backbone.feature_maps,
-                boxes_per_loc=ssd.backbone.boxes_per_loc,
-            ),
-        )
-        self.register_buffer("empty_loc", torch.tensor(0.0, dtype=torch.float))
-        self.register_buffer("empty_scale", torch.tensor(1.0, dtype=torch.float))
-
-    @staticmethod
-    def latents_indices(
-        feature_maps: List[int], boxes_per_loc: List[int]
-    ) -> torch.Tensor:
-        """Get indices for reconstructing images.
-
-        .. Caters for the difference between z_what, z_depth and z_where, z_present.
-        """
-        indices = []
-        idx = 0
-        for feature_map, n_boxes in zip(feature_maps, boxes_per_loc):
-            for feature_map_idx in range(feature_map ** 2):
-                indices.append(
-                    torch.full(size=(n_boxes,), fill_value=idx, dtype=torch.float)
-                )
-                idx += 1
-        return torch.cat(indices, dim=0)
-
-    def pad_latents(
-        self,
-        latents: Tuple[
-            Tuple[torch.Tensor, torch.Tensor],
-            torch.Tensor,
-            torch.Tensor,
-            Tuple[torch.Tensor, torch.Tensor],
-        ],
-    ) -> Tuple[
-        Tuple[torch.Tensor, torch.Tensor],
-        torch.Tensor,
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-    ]:
-        """Pad latents according to Encoder's settings."""
-        (
-            (z_what_loc, z_what_scale),
-            z_where,
-            z_present,
-            (z_depth_loc, z_depth_scale),
-        ) = latents
-        # repeat rows to match z_where and z_present
-        indices = self.indices.long()
-        what_indices = indices
-        if self.background:
-            what_indices = torch.hstack((indices, indices.max() + 1))
-        z_what_loc = z_what_loc.index_select(dim=1, index=what_indices)
-        z_what_scale = z_what_scale.index_select(dim=1, index=what_indices)
-        z_depth_loc = z_depth_loc.index_select(dim=1, index=indices)
-        z_depth_scale = z_depth_scale.index_select(dim=1, index=indices)
-        return (
-            (z_what_loc, z_what_scale),
-            z_where,
-            z_present,
-            (z_depth_loc, z_depth_scale),
-        )
-
-    def reset_non_present(
-        self,
-        latents: Tuple[
-            Tuple[torch.Tensor, torch.Tensor],
-            torch.Tensor,
-            torch.Tensor,
-            Tuple[torch.Tensor, torch.Tensor],
-        ],
-    ) -> Tuple[
-        Tuple[torch.Tensor, torch.Tensor],
-        torch.Tensor,
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-    ]:
-        """Reset latents, whose z_present is 0.
-
-        .. note: this will set all "non-present" locs to 0. and scales to 1.
-        """
-        (
-            (z_what_loc, z_what_scale),
-            z_where,
-            z_present,
-            (z_depth_loc, z_depth_scale),
-        ) = latents
-        present_mask = torch.gt(z_present, self.z_present_eps)
-        what_present_mask = present_mask
-        if self.background:
-            what_present_mask = torch.hstack(
-                (
-                    present_mask,
-                    present_mask.new_full((1,), fill_value=True).expand(
-                        present_mask.shape[0], 1, 1
-                    ),
-                )
-            )
-        z_what_loc = torch.where(what_present_mask, z_what_loc, self.empty_loc)
-        z_what_scale = torch.where(what_present_mask, z_what_scale, self.empty_scale)
-        z_where = torch.where(present_mask, z_where, self.empty_loc)
-        z_depth_loc = torch.where(present_mask, z_depth_loc, self.empty_loc)
-        z_depth_scale = torch.where(present_mask, z_depth_scale, self.empty_scale)
-        return (
-            (z_what_loc, z_what_scale),
-            z_where,
-            z_present,
-            (z_depth_loc, z_depth_scale),
-        )
-
-    def forward(
-        self, images: torch.Tensor
-    ) -> Tuple[
-        Tuple[torch.Tensor, torch.Tensor],
-        torch.Tensor,
-        torch.Tensor,
-        Tuple[torch.Tensor, torch.Tensor],
-    ]:
-        """Takes images tensors (batch_size x channels x image_size x image_size)
-        .. and outputs latent representation tuple
-        .. (z_what (loc & scale), z_where, z_present, z_depth (loc & scale))
-        """
-        where_present_features = self.ssd_backbone(images)
-        if self.clone_backbone:
-            what_depth_features = self.ssd_backbone_cloned(images)
-        else:
-            what_depth_features = where_present_features
-        z_where = self.where_enc(where_present_features)
-        z_present = self.present_enc(where_present_features)
-        z_what_loc, z_what_scale = self.what_enc(what_depth_features)
-        z_depth_loc, z_depth_scale = self.depth_enc(what_depth_features)
-        latents = (
-            (z_what_loc, z_what_scale),
-            z_where,
-            z_present,
-            (z_depth_loc, z_depth_scale),
-        )
-        padded_latents = self.pad_latents(latents)
-        if self.reset:
-            padded_latents = self.reset_non_present(padded_latents)
-        return padded_latents
-
-
-class Decoder(nn.Module):
-    """Module decoding latent representation.
-
-    .. Pipeline:
-       - sort z_depth ascending
-       - sort $$z_{what}$$, $$z_{where}$$, $$z_{present}$$ accordingly
-       - decode $$z_{what}$$ where $$z_{present} = 1$$
-       - transform decoded objects according to $$z_{where}$$
-       - merge transformed images based on $$z_{depth}$$
-    """
-
-    def __init__(
-        self,
-        ssd: SSD,
-        z_what_size: int = 64,
-        drop_empty: bool = True,
-        train_what: bool = True,
-        background: bool = True,
-    ):
-        super().__init__()
-        self.what_dec = WhatDecoder(z_what_size=z_what_size).requires_grad_(train_what)
-        self.where_stn = WhereTransformer(image_size=ssd.image_size[0])
-        self.drop = drop_empty
-        self.background = background
-        if background:
-            self.register_buffer("bg_depth", torch.zeros(1))
-            self.register_buffer("bg_present", torch.ones(1))
-            self.register_buffer("bg_where", torch.tensor([0.5, 0.5, 1.0, 1.0]))
-        self.pixel_means = ssd.backbone.PIXEL_MEANS
-        self.pixel_stds = ssd.backbone.PIXEL_STDS
-
-    def pad_indices(self, n_present: torch.Tensor) -> torch.Tensor:
-        """Using number of objects in chunks create indices
-        .. so that every chunk is padded to the same dimension.
-
-        .. Assumes index 0 refers to "starter" (empty) object
-        .. Puts background index at the beginning of indices arange
-
-        :param n_present: number of objects in each chunk
-        :return: indices for padding tensors
-        """
-        end_idx = 1
-        max_objects = torch.max(n_present)
-        indices = []
-        for chunk_objects in n_present:
-            start_idx = end_idx
-            end_idx = end_idx + chunk_objects
-            if self.background:
-                idx_range = torch.cat(
-                    (
-                        torch.tensor(
-                            [end_idx - 1], dtype=torch.long, device=n_present.device
-                        ),
-                        torch.arange(
-                            start=start_idx,
-                            end=end_idx - 1,
-                            dtype=torch.long,
-                            device=n_present.device,
-                        ),
-                    ),
-                    dim=0,
-                )
-                start_pad = 0
-            else:
-                idx_range = torch.arange(
-                    start=start_idx,
-                    end=end_idx,
-                    dtype=torch.long,
-                    device=n_present.device,
-                )
-                start_pad = 1
-            indices.append(
-                functional.pad(idx_range, pad=[start_pad, max_objects - chunk_objects])
-            )
-        return torch.cat(indices)
-
-    def pad_reconstructions(
-        self,
-        transformed_images: torch.Tensor,
-        z_depth: torch.Tensor,
-        n_present: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Pad tensors to have identical 1. dim shape
-        .. and reshape to (batch_size x n_objects x ...)
-        """
-        image_starter = transformed_images.new_zeros(
-            (1, 3, self.where_stn.image_size, self.where_stn.image_size)
-        )
-        z_depth_starter = z_depth.new_full((1, 1), fill_value=-float("inf"))
-        images = torch.cat((image_starter, transformed_images), dim=0)
-        z_depth = torch.cat((z_depth_starter, z_depth), dim=0)
-        max_present = torch.max(n_present)
-        padded_shape = max_present.item() + (not self.background) * 1
-        indices = self.pad_indices(n_present)
-        images = images[indices].view(
-            -1,
-            padded_shape,
-            3,
-            self.where_stn.image_size,
-            self.where_stn.image_size,
-        )
-        z_depth = z_depth[indices].view(-1, padded_shape)
-        return images, z_depth
-
-    @staticmethod
-    def merge_reconstructions(
-        reconstructions: torch.Tensor, weights: torch.Tensor
-    ) -> torch.Tensor:
-        """Combine decoder images into one by weighted sum."""
-        weighted_images = reconstructions * functional.softmax(weights, dim=1).view(
-            *weights.shape[:2], 1, 1, 1
-        )
-        return torch.sum(weighted_images, dim=1)
-
-    @staticmethod
-    def fill_background(
-        merged: torch.Tensor, backgrounds: torch.Tensor
-    ) -> torch.Tensor:
-        """Fill merged images background with background reconstruction."""
-        mask = torch.where(merged < 1e-3, 1.0, 0.0)
-        return merged + backgrounds * mask
-
-    def reconstruct_objects(
-        self,
-        z_what: torch.Tensor,
-        z_where: torch.Tensor,
-        z_present: torch.Tensor,
-        z_depth: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Render reconstructions and their depths from batch."""
-        batch_size = z_what.shape[0]
-        if self.background:  # append background latents
-            z_depth = torch.cat(
-                (z_depth, self.bg_depth.expand(batch_size, 1, 1)), dim=1
-            )
-            z_present = torch.cat(
-                (z_present, self.bg_present.expand(batch_size, 1, 1)), dim=1
-            )
-            z_where = torch.cat(
-                (z_where, self.bg_where.expand(batch_size, 1, 4)), dim=1
-            )
-        z_what_shape = z_what.shape
-        z_where_shape = z_where.shape
-        z_depth_shape = z_depth.shape
-        if self.drop:
-            present_mask = torch.eq(z_present, 1)
-            n_present = torch.sum(present_mask, dim=1).squeeze(-1)
-            z_what = z_what[present_mask.expand_as(z_what)].view(-1, z_what_shape[-1])
-            z_where = z_where[present_mask.expand_as(z_where)].view(
-                -1, z_where_shape[-1]
-            )
-            z_depth = z_depth[present_mask.expand_as(z_depth)].view(
-                -1, z_depth_shape[-1]
-            )
-        z_what_flat = z_what.view(-1, z_what_shape[-1])
-        z_where_flat = z_where.view(-1, z_where_shape[-1])
-        decoded_images = self.what_dec(z_what_flat)
-        transformed_images = self.where_stn(decoded_images, z_where_flat)
-        if self.drop:
-            reconstructions, depths = self.pad_reconstructions(
-                transformed_images=transformed_images,
-                z_depth=z_depth,
-                n_present=n_present,
-            )
-        else:
-            reconstructions = transformed_images.view(
-                -1,
-                z_what_shape[-2],
-                3,
-                self.where_stn.image_size,
-                self.where_stn.image_size,
-            )
-            depths = z_depth.where(
-                z_present == 1.0, z_depth.new_full((1,), fill_value=-float("inf"))
-            )
-            if self.background:
-                reconstructions = torch.cat(
-                    (reconstructions[:, [-1]], reconstructions[:, :-1]), dim=1
-                )
-                depths = torch.cat((depths[:, [-1]], depths[:, :-1]), dim=1)
-        return reconstructions, depths
-
-    def forward(
-        self, latents: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
-    ) -> torch.Tensor:
-        """Takes latent variables tensors tuple (z_what, z_where, z_present, z_depth)
-        .. and outputs reconstructed images batch
-        .. (batch_size x channels x image_size x image_size)
-        """
-        z_what, z_where, z_present, z_depth = latents
-        # render reconstructions
-        reconstructions, depths = self.reconstruct_objects(
-            z_what, z_where, z_present, z_depth
-        )
-        # merge reconstructions
-        if self.background:
-            objects, object_weights = reconstructions[:, 1:], depths[:, 1:]
-        else:
-            objects, object_weights = reconstructions, depths
-        output = self.merge_reconstructions(
-            reconstructions=objects, weights=object_weights
-        )
-        if self.background:
-            output = self.fill_background(
-                merged=output, backgrounds=reconstructions[:, 0]
-            )
-        return output
 
 
 class SSDIR(pl.LightningModule):
@@ -504,7 +82,9 @@ class SSDIR(pl.LightningModule):
         present_coef: float = 1.0,
         depth_coef: float = 1.0,
         rec_coef: float = 1.0,
+        obs_coef: float = 1.0,
         score_boxes_only: bool = False,
+        normalize_reconstructions: bool = True,
         train_what_encoder: bool = True,
         train_what_decoder: bool = True,
         train_where: bool = True,
@@ -545,8 +125,10 @@ class SSDIR(pl.LightningModule):
         :param what_coef: z_what loss component coefficient
         :param present_coef: z_present loss component coefficient
         :param depth_coef: z_depth loss component coefficient
-        :param rec_coef: reconstruction error component coefficient
+        :param rec_coef: reconstruction error component coefficient (per-object)
+        :param obs_coef: reconstruction error component coefficient (entire image)
         :param score_boxes_only: score reconstructions only inside bounding boxes
+        :param normalize_reconstructions: normalize reconstructions before scoring
         :param train_what_encoder: train what encoder
         :param train_what_decoder: train what decoder
         :param train_where: train where encoder
@@ -630,7 +212,10 @@ class SSDIR(pl.LightningModule):
         self._present_coef = present_coef
         self._depth_coef = depth_coef
         self._rec_coef = rec_coef
+        self._obs_coef = obs_coef
         self.score_boxes_only = score_boxes_only
+        self.normalize_reconstructions = normalize_reconstructions
+        self.rec_stn = WhereTransformer(image_size=64, inverse=True)
 
         self.reset_non_present = reset_non_present
         self.visualize_inference = visualize_inference
@@ -803,7 +388,13 @@ class SSDIR(pl.LightningModule):
             "--rec_coef",
             type=float,
             default=1.0,
-            help="Reconstruction error component coefficient",
+            help="Reconstruction error component coefficient (per object)",
+        )
+        parser.add_argument(
+            "--obs_coef",
+            type=float,
+            default=1.0,
+            help="Reconstruction error component coefficient (entire image)",
         )
         parser.add_argument(
             "--score_boxes_only",
@@ -812,6 +403,14 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=False,
             help="Score reconstructions only inside bounding boxes",
+        )
+        parser.add_argument(
+            "--normalize_reconstructions",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Normalize reconstructions before scoring",
         )
         parser.add_argument(
             "--train_what_encoder",
@@ -984,7 +583,7 @@ class SSDIR(pl.LightningModule):
 
     @property
     def present_coef(self) -> float:
-        """Calculate what sampling elbo coefficient."""
+        """Calculate present sampling elbo coefficient."""
         coef = self._present_coef
         if self.normalize_elbo:
             coef /= self.batch_size * (self.n_ssd_features + self.background * 1)
@@ -992,7 +591,7 @@ class SSDIR(pl.LightningModule):
 
     @property
     def depth_coef(self) -> float:
-        """Calculate what sampling elbo coefficient."""
+        """Calculate depth sampling elbo coefficient."""
         coef = self._depth_coef
         if self.normalize_elbo:
             coef /= self.batch_size * (self.n_ssd_features + self.background * 1)
@@ -1000,8 +599,19 @@ class SSDIR(pl.LightningModule):
 
     @property
     def rec_coef(self) -> float:
-        """Calculate what sampling elbo coefficient."""
+        """Calculate reconstruction sampling elbo coefficient (per-object).
+
+        .. note: needs to be divided by the number of reconstructed objects.
+        """
         coef = self._rec_coef
+        if self.normalize_elbo:
+            coef /= self.batch_size * 3 * 64 * 64
+        return coef
+
+    @property
+    def obs_coef(self) -> float:
+        """Calculate reconstruction sampling elbo coefficient (entire image)."""
+        coef = self._obs_coef
         if self.normalize_elbo:
             coef /= self.batch_size * 3 * self.image_size[0] * self.image_size[1]
         return coef
@@ -1041,20 +651,57 @@ class SSDIR(pl.LightningModule):
                     "z_depth", dist.Normal(z_depth_loc, z_depth_scale).to_event(2)
                 )
 
-            output = self.decoder((z_what, z_where, z_present, z_depth)).permute(
-                0, 2, 3, 1
-            )
             obs = denormalize(
                 x.permute(0, 2, 3, 1),
                 pixel_mean=self.pixel_means,
                 pixel_std=self.pixel_stds,
             )
+
+            # all stages from decoder.forward
+            z_what, z_where, z_present, z_depth = self.decoder.handle_latents(
+                z_what, z_where, z_present, z_depth
+            )
+            decoded_images, z_where_flat = self.decoder.decode_objects(z_what, z_where)
+            reconstructions, depths = self.decoder.transform_objects(
+                decoded_images, z_where_flat, z_present, z_depth
+            )
+            output = self.decoder.merge_reconstructions(
+                reconstructions, depths
+            ).permute(0, 2, 3, 1)
+
             if self.score_boxes_only:
                 mask = output != 0
                 output = torch.where(mask, output, output.new_tensor(0.0))
                 obs = torch.where(mask, obs, obs.new_tensor(0.0))
-            with poutine.scale(scale=self.rec_coef):
+            if self.normalize_reconstructions:
+                output = self.normalize_output(output)
+            with poutine.scale(scale=self.obs_coef):
                 pyro.sample("obs", dist.Bernoulli(output).to_event(3), obs=obs)
+
+        with pyro.plate("reconstructions"):
+            if self.rec_coef:
+                n_present = (
+                    torch.sum(z_present, dim=1, dtype=torch.long).squeeze(-1)
+                    if self.drop
+                    else z_present.new_tensor(z_present.shape[0] * [z_present.shape[1]])
+                )
+                obs_idx = torch.repeat_interleave(
+                    torch.arange(
+                        n_present.numel(),
+                        dtype=n_present.dtype,
+                        device=n_present.device,
+                    ),
+                    n_present,
+                )
+                transformed_obs = self.rec_stn(
+                    obs[obs_idx].permute(0, 3, 1, 2), z_where_flat
+                )
+                with poutine.scale(scale=self.rec_coef / n_present.sum()):
+                    pyro.sample(
+                        "rec",
+                        dist.Bernoulli(decoded_images).to_event(3),
+                        obs=transformed_obs,
+                    )
 
     def guide(self, x: torch.Tensor):
         """Pyro guide; $$q(z|x)$$."""
@@ -1242,20 +889,26 @@ class SSDIR(pl.LightningModule):
 
                 if self.visualize_latents:
                     z_what, z_where, z_present, z_depth = latents
-                    objects, depths = self.decoder.reconstruct_objects(
+                    z_what, z_where, z_present, z_depth = self.decoder.handle_latents(
                         z_what[0].unsqueeze(0),
                         z_where[0].unsqueeze(0),
                         z_present[0].unsqueeze(0),
                         z_depth[0].unsqueeze(0),
+                    )
+                    decoded_image, z_where_flat = self.decoder.decode_objects(
+                        z_what, z_where
+                    )
+                    objects, depths = self.decoder.transform_objects(
+                        decoded_image,
+                        z_where_flat,
+                        z_present,
+                        z_depth,
                     )
                     _, sort_index = torch.sort(depths, dim=1, descending=True)
                     sorted_objects = objects.gather(
                         dim=1,
                         index=sort_index.view(1, -1, 1, 1, 1).expand_as(objects),
                     )
-                    filtered_z_where = z_where[0][
-                        (z_present[0] == 1).expand_as(z_where[0])
-                    ].view(-1, z_where.shape[-1])
 
                     (
                         inference_image,
@@ -1264,7 +917,7 @@ class SSDIR(pl.LightningModule):
                         image=vis_images[0],
                         boxes=vis_boxes[0],
                         reconstruction=reconstructions[0],
-                        z_where=filtered_z_where,
+                        z_where=z_where,
                         objects=sorted_objects[0],
                     )
                     self.logger.experiment.log(
