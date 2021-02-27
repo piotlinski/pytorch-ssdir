@@ -14,6 +14,8 @@ def corner_to_center_target_transform(
     n_objs = boxes.shape[0]
     pad_size = 200
     return (
-        functional.pad(corner_bbox_to_center_bbox(boxes), [0, 0, 0, pad_size - n_objs]),
+        functional.pad(
+            corner_bbox_to_center_bbox(boxes).view(-1, 4), [0, 0, 0, pad_size - n_objs]
+        ),
         functional.pad(labels, [0, pad_size - n_objs]),
     )
