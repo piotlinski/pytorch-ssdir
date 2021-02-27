@@ -199,6 +199,7 @@ class SSDIR(pl.LightningModule):
         self.image_size = ssd_model.image_size
         self.flip_train = ssd_model.flip_train
         self.augment_colors_train = ssd_model.augment_colors_train
+        self.strong_crop = ssd_model.strong_crop
         self.dataset = ssd_model.dataset
         self.data_dir = ssd_model.data_dir
 
@@ -1031,6 +1032,7 @@ class SSDIR(pl.LightningModule):
             pixel_std=self.pixel_stds,
             flip=self.flip_train,
             augment_colors=self.augment_colors_train,
+            strong_crop=self.strong_crop,
         )
         dataset = self.dataset(
             self.data_dir,
