@@ -9,8 +9,11 @@ from pytorch_ssd.modeling.box_predictors import SSDBoxPredictor
 class PresentEncoder(nn.Module):
     """Module encoding input image features to present latent param."""
 
-    def __init__(self, ssd_box_predictor: SSDBoxPredictor):
+    def __init__(
+        self, ssd_box_predictor: SSDBoxPredictor, normalize_probas: bool = False
+    ):
         super().__init__()
+        self.normalize_probas = normalize_probas
         self.ssd_cls_headers = ssd_box_predictor.cls_headers
         self.n_classes = ssd_box_predictor.n_classes
 
@@ -33,4 +36,10 @@ class PresentEncoder(nn.Module):
             presents.append(present.where(max_indices == 0, max_values))
 
         presents = torch.cat(presents, dim=1)
+
+        if self.normalize_probas:
+            maxes = torch.max(presents, dim=1)[0]
+            maxes[maxes == 0.0] = 1.0
+            presents = presents / maxes.unsqueeze(-1).expand_as(presents)
+
         return presents

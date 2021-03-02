@@ -40,6 +40,7 @@ class Encoder(nn.Module):
         clone_backbone: bool = False,
         reset_non_present: bool = True,
         background: bool = True,
+        normalize_z_present: bool = False,
     ):
         super().__init__()
         self.ssd_backbone = ssd.backbone.requires_grad_(train_backbone)
@@ -70,7 +71,8 @@ class Encoder(nn.Module):
             square_boxes=square_boxes,
         ).requires_grad_(train_where)
         self.present_enc = PresentEncoder(
-            ssd_box_predictor=ssd.predictor
+            ssd_box_predictor=ssd.predictor,
+            normalize_probas=normalize_z_present,
         ).requires_grad_(train_present)
         self.depth_enc = DepthEncoder(
             feature_channels=ssd.backbone.out_channels,

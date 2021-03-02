@@ -78,6 +78,7 @@ class SSDIR(pl.LightningModule):
         strong_crop: bool = False,
         square_boxes: bool = False,
         background: bool = True,
+        normalize_z_present: bool = False,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         normalize_elbo: bool = False,
@@ -124,6 +125,7 @@ class SSDIR(pl.LightningModule):
         :param strong_crop: crop input image additionally (for small objects datasets)
         :param square_boxes: use square boxes instead of rectangular
         :param background: learn background latents
+        :param normalize_z_present: normalize z_present probabilities
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
         :param normalize_elbo: normalize elbo components by tenors' numels
@@ -167,6 +169,7 @@ class SSDIR(pl.LightningModule):
             clone_backbone=clone_backbone,
             reset_non_present=reset_non_present,
             background=background,
+            normalize_z_present=normalize_z_present,
         )
         self.decoder = Decoder(
             ssd=ssd_model,
@@ -368,6 +371,14 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=True,
             help="Learn background latents",
+        )
+        parser.add_argument(
+            "--normalize_z_present",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+            help="Normalize z_present probabilities",
         )
         parser.add_argument(
             "--z_what_scale_const",
