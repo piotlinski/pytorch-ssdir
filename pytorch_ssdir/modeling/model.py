@@ -1,6 +1,7 @@
 """SSDIR model and guide declarations."""
 import warnings
 from argparse import ArgumentParser
+from functools import partial
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
@@ -73,6 +74,8 @@ class SSDIR(pl.LightningModule):
         z_what_hidden: int = 2,
         z_present_p_prior: float = 0.01,
         drop: bool = True,
+        drop_too_small: bool = True,
+        strong_crop: bool = False,
         square_boxes: bool = False,
         background: bool = True,
         z_what_scale_const: Optional[float] = None,
@@ -117,6 +120,8 @@ class SSDIR(pl.LightningModule):
         :param z_what_hidden: number of extra hidden layers for what encoder
         :param z_present_p_prior: present prob prior
         :param drop: drop empty objects' latents
+        :param drop_too_small: remove objects that are smaller than 4% of image
+        :param strong_crop: crop input image additionally (for small objects datasets)
         :param square_boxes: use square boxes instead of rectangular
         :param background: learn background latents
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
@@ -199,7 +204,8 @@ class SSDIR(pl.LightningModule):
         self.image_size = ssd_model.image_size
         self.flip_train = ssd_model.flip_train
         self.augment_colors_train = ssd_model.augment_colors_train
-        self.strong_crop = ssd_model.strong_crop
+        self.strong_crop = strong_crop
+        self.drop_too_small = drop_too_small
         self.dataset = ssd_model.dataset
         self.data_dir = ssd_model.data_dir
 
@@ -330,6 +336,22 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=True,
             help="Drop empty objects' latents",
+        )
+        parser.add_argument(
+            "--drop_too_small",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+            help="Remove objects that are smaller than 4% of image",
+        )
+        parser.add_argument(
+            "--strong_crop",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Crop input image additionally (for small objects datasets)",
         )
         parser.add_argument(
             "--square_boxes",
@@ -1037,7 +1059,9 @@ class SSDIR(pl.LightningModule):
         dataset = self.dataset(
             self.data_dir,
             data_transform=data_transform,
-            target_transform=corner_to_center_target_transform,
+            target_transform=partial(
+                corner_to_center_target_transform, drop_too_small=self.drop_too_small
+            ),
             subset="train",
         )
         return DataLoader(
@@ -1058,7 +1082,9 @@ class SSDIR(pl.LightningModule):
         dataset = self.dataset(
             self.data_dir,
             data_transform=data_transform,
-            target_transform=corner_to_center_target_transform,
+            target_transform=partial(
+                corner_to_center_target_transform, drop_too_small=self.drop_too_small
+            ),
             subset="test",
         )
         return DataLoader(
