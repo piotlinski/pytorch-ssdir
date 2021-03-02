@@ -13,7 +13,7 @@ def corner_to_center_target_transform(
     drop_too_small: bool = False,
 ):
     """Convert ground truth boxes from corner to center form."""
-    if drop_too_small:
+    if drop_too_small and boxes.numel():
         boxes_mask_w = boxes[:, 2] - boxes[:, 0] > 0.04
         boxes_mask_h = boxes[:, 3] - boxes[:, 1] > 0.04
         boxes_mask = torch.logical_and(boxes_mask_w, boxes_mask_h)

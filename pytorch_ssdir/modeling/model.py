@@ -684,6 +684,9 @@ class SSDIR(pl.LightningModule):
             z_what, z_where, z_present, z_depth = self.decoder.handle_latents(
                 z_what, z_where, z_present, z_depth
             )
+            if torch.sum(z_present) == 0:
+                raise ValueError("No object present in batch")
+
             decoded_images, z_where_flat = self.decoder.decode_objects(z_what, z_where)
             reconstructions, depths = self.decoder.transform_objects(
                 decoded_images, z_where_flat, z_present, z_depth
@@ -874,15 +877,19 @@ class SSDIR(pl.LightningModule):
         criterion = Trace_ELBO().differentiable_loss
 
         images, boxes, _ = batch
-        loss = criterion(self.model, self.guide, images)
+        try:
+            loss = criterion(self.model, self.guide, images)
+            self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
+            for site, site_loss in per_site_loss(
+                self.model, self.guide, images
+            ).items():
+                self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
+        except ValueError as ex:
+            loss = torch.tensor(float("NaN"))
 
         if torch.isnan(loss):
             print("Skipping training with this batch due to NaN loss.")
             return None
-
-        self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
-        for site, site_loss in per_site_loss(self.model, self.guide, images).items():
-            self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
