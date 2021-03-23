@@ -1,6 +1,7 @@
 """SSDIR model and guide declarations."""
 import warnings
 from argparse import ArgumentParser
+from functools import partial
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
@@ -73,8 +74,11 @@ class SSDIR(pl.LightningModule):
         z_what_hidden: int = 2,
         z_present_p_prior: float = 0.01,
         drop: bool = True,
+        drop_too_small: bool = True,
+        strong_crop: bool = False,
         square_boxes: bool = False,
         background: bool = True,
+        normalize_z_present: bool = False,
         z_what_scale_const: Optional[float] = None,
         z_depth_scale_const: Optional[float] = None,
         normalize_elbo: bool = False,
@@ -117,8 +121,11 @@ class SSDIR(pl.LightningModule):
         :param z_what_hidden: number of extra hidden layers for what encoder
         :param z_present_p_prior: present prob prior
         :param drop: drop empty objects' latents
+        :param drop_too_small: remove objects that are smaller than 4% of image
+        :param strong_crop: crop input image additionally (for small objects datasets)
         :param square_boxes: use square boxes instead of rectangular
         :param background: learn background latents
+        :param normalize_z_present: normalize z_present probabilities
         :param z_what_scale_const: fixed z_what scale (if None - use NN to model)
         :param z_depth_scale_const: fixed z_depth scale (if None - use NN to model)
         :param normalize_elbo: normalize elbo components by tenors' numels
@@ -162,6 +169,7 @@ class SSDIR(pl.LightningModule):
             clone_backbone=clone_backbone,
             reset_non_present=reset_non_present,
             background=background,
+            normalize_z_present=normalize_z_present,
         )
         self.decoder = Decoder(
             ssd=ssd_model,
@@ -199,6 +207,8 @@ class SSDIR(pl.LightningModule):
         self.image_size = ssd_model.image_size
         self.flip_train = ssd_model.flip_train
         self.augment_colors_train = ssd_model.augment_colors_train
+        self.strong_crop = strong_crop
+        self.drop_too_small = drop_too_small
         self.dataset = ssd_model.dataset
         self.data_dir = ssd_model.data_dir
 
@@ -331,6 +341,22 @@ class SSDIR(pl.LightningModule):
             help="Drop empty objects' latents",
         )
         parser.add_argument(
+            "--drop_too_small",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+            help="Remove objects that are smaller than 4% of image",
+        )
+        parser.add_argument(
+            "--strong_crop",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Crop input image additionally (for small objects datasets)",
+        )
+        parser.add_argument(
             "--square_boxes",
             type=str2bool,
             nargs="?",
@@ -345,6 +371,14 @@ class SSDIR(pl.LightningModule):
             const=True,
             default=True,
             help="Learn background latents",
+        )
+        parser.add_argument(
+            "--normalize_z_present",
+            type=str2bool,
+            nargs="?",
+            const=True,
+            default=True,
+            help="Normalize z_present probabilities",
         )
         parser.add_argument(
             "--z_what_scale_const",
@@ -661,6 +695,9 @@ class SSDIR(pl.LightningModule):
             z_what, z_where, z_present, z_depth = self.decoder.handle_latents(
                 z_what, z_where, z_present, z_depth
             )
+            if torch.sum(z_present) == 0:
+                raise ValueError("No object present in batch")
+
             decoded_images, z_where_flat = self.decoder.decode_objects(z_what, z_where)
             reconstructions, depths = self.decoder.transform_objects(
                 decoded_images, z_where_flat, z_present, z_depth
@@ -851,15 +888,19 @@ class SSDIR(pl.LightningModule):
         criterion = Trace_ELBO().differentiable_loss
 
         images, boxes, _ = batch
-        loss = criterion(self.model, self.guide, images)
+        try:
+            loss = criterion(self.model, self.guide, images)
+            self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
+            for site, site_loss in per_site_loss(
+                self.model, self.guide, images
+            ).items():
+                self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
+        except ValueError as ex:
+            loss = torch.tensor(float("NaN"))
 
         if torch.isnan(loss):
             print("Skipping training with this batch due to NaN loss.")
             return None
-
-        self.log(f"{stage}_loss", loss, prog_bar=False, logger=True)
-        for site, site_loss in per_site_loss(self.model, self.guide, images).items():
-            self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
 
         vis_images = images.detach()
         vis_boxes = boxes.detach()
@@ -1031,11 +1072,14 @@ class SSDIR(pl.LightningModule):
             pixel_std=self.pixel_stds,
             flip=self.flip_train,
             augment_colors=self.augment_colors_train,
+            strong_crop=self.strong_crop,
         )
         dataset = self.dataset(
             self.data_dir,
             data_transform=data_transform,
-            target_transform=corner_to_center_target_transform,
+            target_transform=partial(
+                corner_to_center_target_transform, drop_too_small=self.drop_too_small
+            ),
             subset="train",
         )
         return DataLoader(
@@ -1056,7 +1100,9 @@ class SSDIR(pl.LightningModule):
         dataset = self.dataset(
             self.data_dir,
             data_transform=data_transform,
-            target_transform=corner_to_center_target_transform,
+            target_transform=partial(
+                corner_to_center_target_transform, drop_too_small=self.drop_too_small
+            ),
             subset="test",
         )
         return DataLoader(
