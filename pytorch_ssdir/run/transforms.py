@@ -21,7 +21,9 @@ def corner_to_center_target_transform(
         labels = labels[boxes_mask]
 
     if boxes.numel() == 0:
-        return torch.tensor([]), torch.tensor([])
+        return torch.tensor([], device=boxes.device), torch.tensor(
+            [], device=boxes.device
+        )
 
     n_objs = boxes.shape[0]
     pad_size = 200

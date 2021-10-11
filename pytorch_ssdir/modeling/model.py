@@ -896,7 +896,7 @@ class SSDIR(pl.LightningModule):
             ).items():
                 self.log(f"{stage}_loss_{site}", site_loss, prog_bar=False, logger=True)
         except ValueError as ex:
-            loss = torch.tensor(float("NaN"))
+            loss = torch.tensor(float("NaN"), device=self.device)
 
         if torch.isnan(loss):
             print("Skipping training with this batch due to NaN loss.")
