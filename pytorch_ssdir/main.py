@@ -40,7 +40,7 @@ def main(hparams):
         mode="min",
     )
     early_stopping_callback = EarlyStopping(
-        monitor="val_loss", patience=hparams.early_stopping_patience
+        monitor="val_loss_rec", patience=hparams.early_stopping_patience
     )
     lr_monitor_callback = LearningRateMonitor(logging_interval="step")
     callbacks = [checkpoint_callback, lr_monitor_callback]

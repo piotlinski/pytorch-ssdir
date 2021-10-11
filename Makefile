@@ -33,4 +33,4 @@ run:  ## Run model
 
 cmd ?= python3 train.py $(ssdir_args)
 run.basic:  ## Run model using basic docker
-	$(DOCKER_RUN) $(LOCAL_USER) --gpus '"device=$(gpu)"' --shm-size 24G --cpus 16 piotrekzie100/dev:basic $(cmd)
+	$(DOCKER_RUN) $(LOCAL_USER) $(DOCKER_ARGS) --gpus '"device=$(gpu)"' --shm-size 24G --cpus 16 piotrekzie100/dev:basic $(cmd)

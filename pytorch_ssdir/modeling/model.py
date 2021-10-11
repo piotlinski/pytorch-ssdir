@@ -43,7 +43,7 @@ lr_schedulers = {
     "ReduceLROnPlateau": (
         torch.optim.lr_scheduler.ReduceLROnPlateau,
         "epoch",
-        "val_loss",
+        "val_loss_rec",
     ),
     "CyclicLR": (torch.optim.lr_scheduler.CyclicLR, "step", None),
     "CosineAnnealingWarmRestarts": (
