@@ -34,8 +34,8 @@ def main(hparams):
         model = SSDIR(ssd_model=ssd, **kwargs)
 
     checkpoint_callback = ModelCheckpoint(
-        monitor="val_loss",
-        filename="ckpt-{epoch:02d}-{val_loss:.2f}",
+        monitor="val_loss_rec",
+        filename="ckpt-{epoch:02d}-{val_loss_rec:.2f}",
         save_top_k=hparams.n_checkpoints,
         mode="min",
     )
