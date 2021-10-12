@@ -16,6 +16,7 @@ pillow = "^8.0.1"
 networkx = "^2.5"
 pywavelets = "^1.1.1"
 tifffile = "^2020.10.1"
+trackeval = {git = "https://github.com/JonathonLuiten/TrackEval", rev = "master"}
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.0.1"
