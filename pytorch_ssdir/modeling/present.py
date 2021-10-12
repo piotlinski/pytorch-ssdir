@@ -25,15 +25,15 @@ class PresentEncoder(nn.Module):
         presents = []
         batch_size = features[0].shape[0]
         for feature, cls_header in zip(features, self.ssd_cls_headers):
-            logits = torch.sigmoid(
+            logits = torch.exp(
                 cls_header(feature)
                 .permute(0, 2, 3, 1)
                 .contiguous()
                 .view(batch_size, -1, self.n_classes)
             )
-            max_values, max_indices = torch.max(logits, dim=-1, keepdim=True)
-            present = torch.zeros_like(max_values)
-            presents.append(present.where(max_indices == 0, max_values))
+            summed = logits.sum(dim=-1, keepdim=True)
+            max_values, _ = torch.max(logits[..., 1:], dim=-1, keepdim=True)
+            presents.append(max_values / summed)
 
         presents = torch.cat(presents, dim=1)
 
