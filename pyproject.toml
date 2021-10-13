@@ -21,6 +21,7 @@ networkx = "^2.5"
 pywavelets = "^1.1.1"
 tifffile = "^2020.10.1"
 trackeval = {git = "https://github.com/JonathonLuiten/TrackEval", rev = "master"}
+pandas = "^1.3.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.0.1"
