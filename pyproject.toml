@@ -3,6 +3,10 @@ name = "pytorch-ssdir"
 version = "0.1.0"
 description = "Single Shot Multi-Box Detect Infer & Repeat implementation in PyTorch"
 authors = ["Piotr Zieliński <piotrekzie100@gmail.com>"]
+packages = [
+    { include = "pytorch_ssdir" },
+    { include = "experiments" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.8"
