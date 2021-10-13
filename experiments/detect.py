@@ -167,5 +167,5 @@ class Representer:
                 image_size=(height, width),
                 what=what.view(-1).numpy(),
                 present=confidence.view(-1).numpy(),
-                depth=depth.view(-1).numpy()
+                depth=depth.view(-1).numpy(),
             )
