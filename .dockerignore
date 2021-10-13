@@ -1,2 +1,6 @@
 data/**/*
 data
+runs
+runs/**/*
+wandb
+wandb/**/*
