@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-from enum import Enum
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import pyro.distributions as dist
@@ -15,14 +14,6 @@ from pytorch_ssdir.modeling import SSDIR
 BoundingBox = Tuple[float, float, float, float]
 
 
-class R(Enum):
-    CENTROID = "centroid"
-    WHERE = "where"
-    PRESENT = "present"
-    DEPTH = "depth"
-    WHAT = "what"
-
-
 @dataclass
 class Detection:
     confidence: float
@@ -30,7 +21,9 @@ class Detection:
     label: int
     inference_size: Tuple[int, int]
     image_size: Tuple[int, int]
-    _centroid: Optional[List[float]] = None
+    what: np.ndarray
+    present: np.ndarray
+    depth: np.ndarray
 
     @property
     def xywh_norm(self) -> BoundingBox:
@@ -60,14 +53,12 @@ class Detection:
         return x1 * width, y1 * height, x2 * width, y2 * height
 
     @property
-    def centroid(self) -> List[float]:
-        if self._centroid is not None:
-            return self._centroid
-        return list(self.xywh_norm[:2])
+    def centroid(self) -> np.ndarray:
+        return np.array(self.xywh_norm[:2])
 
-    @centroid.setter
-    def centroid(self, value: List[float]):
-        self._centroid = value
+    @property
+    def where(self) -> np.ndarray:
+        return np.array(self.xywh_norm)
 
     @property
     def data(self) -> str:
@@ -82,11 +73,13 @@ class Representer:
         confidence_threshold: float = 0.8,
         nms_threshold: float = 0.45,
         max_per_image: int = 100,
-        centroids: Optional[List[R]] = None,
     ):
-        self.ssdir = SSDIR.load_from_checkpoint(
-            checkpoint, normalize_z_present=False
-        ).eval()
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.ssdir = (
+            SSDIR.load_from_checkpoint(checkpoint, normalize_z_present=False)
+            .eval()
+            .to(self.device)
+        )
         self._prepare = Compose(
             [
                 Resize(*self.ssdir.image_size),
@@ -101,7 +94,6 @@ class Representer:
         self.confidence_threshold = confidence_threshold
         self.nms_threshold = nms_threshold
         self.max_per_image = max_per_image
-        self.centroids = centroids or [R.CENTROID]
 
     def _mask_confidence_threshold(
         self,
@@ -156,39 +148,24 @@ class Representer:
             z_depth[keep_mask],
         )
 
-    def _prepare_centroid(
-        self,
-        centroids: Dict[
-            R, Union[np.ndarray, torch.Tensor, Tuple[float, ...], List[float]]
-        ],
-    ) -> np.ndarray:
-        centroid = []
-        for selected in self.centroids:
-            centroid.extend(centroids[selected])
-        return np.array(centroid)
-
     def __call__(self, frame: np.ndarray):
         height, width, _ = frame.shape
-        prepared = self._prepare(image=frame)["image"]
+        prepared = self._prepare(image=frame)["image"].to(self.device)
         with torch.no_grad():
             latents = self.ssdir.encoder(prepared.unsqueeze(0))
         z_what, z_where, z_present, z_depth = self._latents_nms(
             *self._mask_confidence_threshold(*latents)
         )
-        for bbox, confidence, what, depth in zip(z_where, z_present, z_what, z_depth):
-            tmp = Detection(
+        for bbox, confidence, what, depth in zip(
+            z_where.cpu(), z_present.cpu(), z_what.cpu(), z_depth.cpu()
+        ):
+            yield Detection(
                 confidence=confidence.item(),
                 bbox=tuple(bbox.tolist()),
                 label=1,
                 inference_size=self.ssdir.image_size,
                 image_size=(height, width),
+                what=what.view(-1).numpy(),
+                present=confidence.view(-1).numpy(),
+                depth=depth.view(-1).numpy()
             )
-            centroids = {
-                R.CENTROID: list(tmp.centroid),
-                R.WHAT: what.tolist(),
-                R.WHERE: list(tmp.xywh_norm),
-                R.DEPTH: [depth.item()],
-                R.PRESENT: [confidence.item()],
-            }
-            tmp.centroid = self._prepare_centroid(centroids)
-            yield tmp
