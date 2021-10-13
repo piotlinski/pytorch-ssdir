@@ -1,21 +1,43 @@
+import argparse
+import pickle
 from collections import defaultdict
-from typing import Dict, Iterable
+from enum import Enum
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional
 
 import numpy as np
+from chardet import detect
 from scipy.spatial.distance import cdist
+from tqdm import tqdm
 
 from experiments.detect import Detection
 
 
+class R(Enum):
+    CENTROID = "centroid"
+    WHERE = "where"
+    PRESENT = "present"
+    DEPTH = "depth"
+    WHAT = "what"
+
+
 class Tracker:
-    def __init__(self, max_distance: float = 0.2, max_lost: int = 40):
+    def __init__(
+        self,
+        max_distance: float = 0.2,
+        max_lost: int = 40,
+        metric: str = "cosine",
+        centroids: Optional[List[R]] = None,
+    ):
         self.objects: Dict[int, Detection] = {}
         self._last_id = 0
         self.lost_counts: Dict[int, int] = defaultdict(int)
         self.max_distance = max_distance
         self.max_lost = max_lost
+        self.metric = metric
+        self.centroids = centroids or [R.CENTROID]
 
-    def track(
+    def __call__(
         self, detections: Iterable[Iterable[Detection]]
     ) -> Iterable[Dict[int, Detection]]:
         """Perform object tracking"""
@@ -28,9 +50,15 @@ class Tracker:
             elif frame_detections:
                 distances = cdist(
                     np.array(
-                        [detection.centroid for detection in self.objects.values()]
+                        [
+                            self.get_centroid(detection)
+                            for detection in self.objects.values()
+                        ]
                     ),
-                    np.array([detection.centroid for detection in frame_detections]),
+                    np.array(
+                        [self.get_centroid(detection) for detection in frame_detections]
+                    ),
+                    metric=self.metric,
                 )
                 rows = distances.min(axis=1).argsort()
                 cols = distances.argmin(axis=1)[rows]
@@ -78,3 +106,63 @@ class Tracker:
         if self.lost_counts[object_id] > self.max_lost:
             self._deregister(object_id)
             del self.lost_counts[object_id]
+
+    def get_centroid(self, detection: Detection) -> np.ndarray:
+        centroid = []
+        for selected in self.centroids:
+            centroid.append(getattr(detection, selected.value))
+        return np.concatenate(centroid)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir", help="Path to the dataset", type=Path)
+    parser.add_argument("-i", "--input_file", help="Pickle file name with latents")
+    parser.add_argument(
+        "-r",
+        "--representations",
+        nargs="+",
+        help="Select representations used by tracker",
+    )
+    parser.add_argument(
+        "--max_distance",
+        help="Max distance between objects for tracker",
+        type=float,
+        default=0.2,
+    )
+    parser.add_argument(
+        "--max_lost",
+        help="Max frames before dropping lost detection",
+        type=int,
+        default=40,
+    )
+    parser.add_argument(
+        "--metric",
+        help="Metric for cdist to calculate distance between centroids",
+        default="cosine",
+    )
+
+    args = parser.parse_args()
+
+    with tqdm(list(sorted(args.data_dir.glob("*/")))) as pbar:
+        for data_dir in pbar:
+            tracker = Tracker(
+                max_distance=args.max_distance,
+                max_lost=args.max_lost,
+                metric=args.metric,
+                centroids=[R[selected.upper()] for selected in args.representations],
+            )
+            latents_path = data_dir / args.input_file
+            with latents_path.open("rb") as fp:
+                latents = pickle.load(fp)
+            filename = (
+                f"{args.input_file.split('.')[0]}"
+                f"_{'-'.join(args.representations)}"
+                f"_{args.metric}.txt"
+            )
+            results_path = data_dir / filename
+            with results_path.open("w") as fp:
+                for frame_idx, objects in enumerate(tracker(latents.values())):
+                    for idx, detection in objects.items():
+                        line = detection.data % (frame_idx, idx)
+                        fp.write(f"{line}\n")
