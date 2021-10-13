@@ -61,7 +61,3 @@ if __name__ == "__main__":
                 for frame_idx, image in enumerate(get_images(data_dir), start=1):
                     data[frame_idx] = list(detector(image))
                 pickle.dump(data, fp)
-                # for frame_idx, objects in enumerate(tracker(detector(image) for image in get_images(data_dir)), start=1):
-                #     for idx, detection in objects.items():
-                #         line = detection.data % (frame_idx, idx)
-                #         fp.write(f"{line}\n")
