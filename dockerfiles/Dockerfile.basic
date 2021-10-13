@@ -24,7 +24,7 @@ RUN curl -sSL https://raw.githubusercontent.com/sdispater/poetry/master/get-poet
 WORKDIR $PYSETUP_PATH
 COPY poetry.lock pyproject.toml ./
 COPY pytorch_ssdir ./pytorch_ssdir
-RUN poetry export -f requirements.txt --output requirements.txt
+RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
 
 # --- DEV IMAGE ---
 FROM piotrekzie100/pytorch:1.7.0-py38-cuda10.2
@@ -43,7 +43,7 @@ ENV PYTHONUNBUFFERED=1 \
     WANDB_API_KEY=${WANDB_API_KEY}
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y gosu libgl1-mesa-glx ffmpeg libsm6 libxext6
+    && apt-get install --no-install-recommends -y gosu libgl1-mesa-glx ffmpeg libsm6 libxext6 git
 
 COPY --from=builder $PYSETUP_PATH/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
