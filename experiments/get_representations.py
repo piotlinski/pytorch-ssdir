@@ -7,8 +7,7 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-from experiments.detect import R, Representer
-from experiments.track import Tracker
+from experiments.detect import Representer
 
 
 def get_images(data_dir: Path) -> Iterable[np.ndarray]:
