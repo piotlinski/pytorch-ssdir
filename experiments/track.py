@@ -117,6 +117,7 @@ class Tracker:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", help="Path to the dataset", type=Path)
+    parser.add_argument("--output_dir", "-o", help="Path to directory where results should be stored", default="results", type=Path)
     parser.add_argument("-i", "--input_file", help="Pickle file name with latents")
     parser.add_argument(
         "-r",
@@ -143,6 +144,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    output_dir = args.output_dir / "MOT15-train"
 
     with tqdm(list(sorted(args.data_dir.glob("*/")))) as pbar:
         for data_dir in pbar:
@@ -155,14 +157,14 @@ if __name__ == "__main__":
             latents_path = data_dir / args.input_file
             with latents_path.open("rb") as fp:
                 latents = pickle.load(fp)
-            filename = (
-                f"{args.input_file.split('.')[0]}"
-                f"_{'-'.join(args.representations)}"
-                f"_{args.metric}.txt"
+            tracker_name = (
+                f"SSDIR_{args.input_file.split('.')[0]}"
+                f"_{'-'.join(args.representations)}_{args.metric}"
             )
-            results_path = data_dir / filename
+            results_path = output_dir / tracker_name / "data" / f"{data_dir.name}.txt"
+            results_path.parent.mkdir(parents=True, exist_ok=True)
             with results_path.open("w") as fp:
-                for frame_idx, objects in enumerate(tracker(latents.values())):
+                for frame_idx, objects in enumerate(tracker(latents.values()), start=1):
                     for idx, detection in objects.items():
                         line = detection.data % (frame_idx, idx)
                         fp.write(f"{line}\n")
