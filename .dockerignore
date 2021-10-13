@@ -4,3 +4,7 @@ runs
 runs/**/*
 wandb
 wandb/**/*
+results
+results/**/*
+gt
+gt/**/*
