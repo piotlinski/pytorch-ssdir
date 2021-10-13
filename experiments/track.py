@@ -114,10 +114,25 @@ class Tracker:
         return np.concatenate(centroid)
 
 
+def save_results(objects: Iterable[Dict[int, Detection]], results_path: Path):
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    with results_path.open("w") as fp:
+        for frame_idx, frame_objects in enumerate(objects, start=1):
+            for idx, detection in frame_objects.items():
+                line = detection.data % (frame_idx, idx)
+                fp.write(f"{line}\n")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", help="Path to the dataset", type=Path)
-    parser.add_argument("--output_dir", "-o", help="Path to directory where results should be stored", default="results", type=Path)
+    parser.add_argument(
+        "--output_dir",
+        "-o",
+        help="Path to directory where results should be stored",
+        default="results",
+        type=Path,
+    )
     parser.add_argument("-i", "--input_file", help="Pickle file name with latents")
     parser.add_argument(
         "-r",
@@ -162,9 +177,4 @@ if __name__ == "__main__":
                 f"_{'-'.join(args.representations)}_{args.metric}"
             )
             results_path = output_dir / tracker_name / "data" / f"{data_dir.name}.txt"
-            results_path.parent.mkdir(parents=True, exist_ok=True)
-            with results_path.open("w") as fp:
-                for frame_idx, objects in enumerate(tracker(latents.values()), start=1):
-                    for idx, detection in objects.items():
-                        line = detection.data % (frame_idx, idx)
-                        fp.write(f"{line}\n")
+            save_results(tracker(latents.values()), results_path)
