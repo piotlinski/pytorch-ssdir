@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 import numpy as np
-from chardet import detect
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
