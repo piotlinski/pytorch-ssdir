@@ -54,33 +54,40 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     if not args.evaluate:
-        print("dupa")
-        for confidence_threshold in range(*args.conf_range, 5):
-            confidence_threshold /= 100
-            for nms_threshold in range(*args.nms_range, 5):
-                nms_threshold /= 100
-                detector = Representer(
-                    checkpoint=args.checkpoint,
-                    confidence_threshold=confidence_threshold,
-                    nms_threshold=nms_threshold,
-                    max_per_image=100,
-                )
+        conf_range = list(range(*args.conf_range, 5))
+        nms_range = list(range(*args.nms_range, 5))
+        with tqdm(total=len(conf_range) * len(nms_range)) as top_pbar:
+            for confidence_threshold in conf_range:
+                confidence_threshold /= 100
+                for nms_threshold in nms_range:
+                    nms_threshold /= 100
+                    detector = Representer(
+                        checkpoint=args.checkpoint,
+                        confidence_threshold=confidence_threshold,
+                        nms_threshold=nms_threshold,
+                        max_per_image=100,
+                    )
+                    detector_name = f"SSD_{confidence_threshold}_{nms_threshold}"
+                    top_pbar.desc = detector_name
 
-                with tqdm(list(sorted(args.data_dir.glob("*/")))) as pbar:
-                    for data_dir in pbar:
-                        pbar.desc = data_dir.name
-                        detections = (detector(image) for image in get_images(data_dir))
-                        results_path = (
-                            Path(args.output_dir)
-                            / "MOT15-train"
-                            / f"SSD_{confidence_threshold}_{nms_threshold}"
-                            / "data"
-                            / f"{data_dir.name}.txt"
-                        )
-                        save_detection_results(
-                            (detector(image) for image in get_images(data_dir)),
-                            results_path,
-                        )
+                    with tqdm(list(sorted(args.data_dir.glob("*/")))) as pbar:
+                        for data_dir in pbar:
+                            pbar.desc = data_dir.name
+                            detections = (
+                                detector(image) for image in get_images(data_dir)
+                            )
+                            results_path = (
+                                Path(args.output_dir)
+                                / "MOT15-train"
+                                / detector_name
+                                / "data"
+                                / f"{data_dir.name}.txt"
+                            )
+                            save_detection_results(
+                                (detector(image) for image in get_images(data_dir)),
+                                results_path,
+                            )
+                    top_pbar.update()
     else:
         subprocess.run(
             [
