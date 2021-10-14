@@ -6,5 +6,3 @@ wandb
 wandb/**/*
 results
 results/**/*
-gt
-gt/**/*
