@@ -221,6 +221,8 @@ dmypy.json
 data/*
 results/*
 gt/*
+grid_detect/*
+grid_track/*
 
 # wandb runs directory
 runs/*
