@@ -98,6 +98,7 @@ if __name__ == "__main__":
                 "--GT_FOLDER=gt",
                 "--METRICS=HOTA",
                 "--USE_PARALLEL=True",
+                "--NUM_PARALLEL_CORES=40",
             ]
         )
         results_path = Path(args.output_dir) / "MOT15-train"
