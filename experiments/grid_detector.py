@@ -43,7 +43,13 @@ if __name__ == "__main__":
         default=[5, 100],
         help="Range of NMS threshold values",
     )
-    parser.add_argument("--output_dir", "-o", help="Path for results", type=Path)
+    parser.add_argument(
+        "--output_dir",
+        "-o",
+        help="Path for results",
+        default="results/grid_detect",
+        type=Path,
+    )
     parser.add_argument(
         "--evaluate",
         action="store_true",
@@ -95,7 +101,7 @@ if __name__ == "__main__":
                 "experiments/run_mot_challenge.py",
                 "--BENCHMARK=MOT15",
                 f"--TRACKERS_FOLDER={args.output_dir}",
-                "--GT_FOLDER=gt",
+                "--GT_FOLDER=results/gt",
                 "--METRICS=HOTA",
                 "--USE_PARALLEL=True",
                 "--NUM_PARALLEL_CORES=40",

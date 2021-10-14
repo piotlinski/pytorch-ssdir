@@ -15,7 +15,7 @@ if __name__ == "__main__":
         "--output_dir",
         "-o",
         help="Path to directory where results should be stored",
-        default="grid_track",
+        default="results/grid_track",
         type=Path,
     )
     parser.add_argument("-i", "--input_file", help="Pickle file name with latents")
@@ -105,7 +105,7 @@ if __name__ == "__main__":
                 "experiments/run_mot_challenge.py",
                 "--BENCHMARK=MOT15",
                 f"--TRACKERS_FOLDER={args.output_dir}",
-                "--GT_FOLDER=gt",
+                "--GT_FOLDER=results/gt",
                 "--METRICS=HOTA",
                 "--USE_PARALLEL=True",
                 "--NUM_PARALLEL_CORES=40",
@@ -114,7 +114,9 @@ if __name__ == "__main__":
         results_path = Path(args.output_dir) / "MOT15-train"
         dfs = []
         for setting_path in results_path.glob("*/"):
-            _, max_distance, max_lost, metric, representation = setting_path.name.split("_")
+            _, max_distance, max_lost, metric, representation = setting_path.name.split(
+                "_"
+            )
             results_file = setting_path / "pedestrian_summary.txt"
             with results_file.open("r") as fp:
                 loaded = pd.read_csv(fp, sep=" ")
