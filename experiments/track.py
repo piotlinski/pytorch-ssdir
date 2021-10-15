@@ -3,7 +3,7 @@ import pickle
 from collections import defaultdict
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -21,12 +21,114 @@ class R(Enum):
 
 
 class Tracker:
+    # min and max values of latents for MOT15 dataset and given seed-trained SSDIR
+    LATENT_PARAMS = {
+        "seed0": {
+            "what": {
+                "min": -8.0338335,
+                "max": 8.08027,
+                "mean": 0.0049305256,
+                "std": 0.58864737,
+            },
+            "where": {
+                "min": 0.007004246314366658,
+                "max": 1.0922293345133463,
+                "mean": 0.33716384910999947,
+                "std": 0.24671067636527855,
+            },
+            "depth": {
+                "min": -1.1484525,
+                "max": 1.1615394,
+                "mean": -0.026404815,
+                "std": 0.2179525,
+            },
+            "present": {
+                "min": 0.10001342,
+                "max": 0.9999765,
+                "mean": 0.59679306,
+                "std": 0.29455498,
+            },
+            "centroid": {
+                "min": 0.007004246314366658,
+                "max": 1.0050789388020833,
+                "mean": 0.4974870840841877,
+                "std": 0.1810634289749312,
+            },
+        },
+        "seed7": {
+            "what": {
+                "min": -15.729394,
+                "max": 18.008972,
+                "mean": 0.0017557838,
+                "std": 0.6798157,
+            },
+            "where": {
+                "min": 0.008490112045158942,
+                "max": 1.1111969153086345,
+                "mean": 0.33393296733024713,
+                "std": 0.2463719256155091,
+            },
+            "depth": {
+                "min": -1.5594347,
+                "max": 0.95520926,
+                "mean": -0.03411201,
+                "std": 0.22689663,
+            },
+            "present": {
+                "min": 0.10001471,
+                "max": 0.9999118,
+                "mean": 0.56907946,
+                "std": 0.30641153,
+            },
+            "centroid": {
+                "min": 0.008490112045158942,
+                "max": 1.0003332010904948,
+                "mean": 0.4983941979213823,
+                "std": 0.18062920033251573,
+            },
+        },
+        "seed13": {
+            "what": {
+                "min": -10.42398,
+                "max": 12.147596,
+                "mean": -0.001457557,
+                "std": 0.60431206,
+            },
+            "where": {
+                "min": 0.008477976719538372,
+                "max": 1.1516329956054687,
+                "mean": 0.3354198023396471,
+                "std": 0.2463850749148301,
+            },
+            "depth": {
+                "min": -1.7992802,
+                "max": 1.0634117,
+                "mean": -0.054935463,
+                "std": 0.23897989,
+            },
+            "present": {
+                "min": 0.100028984,
+                "max": 0.99996907,
+                "mean": 0.6031453,
+                "std": 0.30337757,
+            },
+            "centroid": {
+                "min": 0.008477976719538372,
+                "max": 1.0032407633463543,
+                "mean": 0.49707883225132804,
+                "std": 0.17987883940446747,
+            },
+        },
+    }
+
     def __init__(
         self,
         max_distance: float = 0.2,
         max_lost: int = 40,
         metric: str = "cosine",
         centroids: Optional[List[R]] = None,
+        identifier: str = "seed0",
+        preprocess: str = "",
     ):
         self.objects: Dict[int, Detection] = {}
         self._last_id = 0
@@ -35,6 +137,8 @@ class Tracker:
         self.max_lost = max_lost
         self.metric = metric
         self.centroids = centroids or [R.CENTROID]
+        self._id = identifier
+        self.preprocess = preprocess
 
     def __call__(
         self, detections: Iterable[Iterable[Detection]]
@@ -109,8 +213,21 @@ class Tracker:
     def get_centroid(self, detection: Detection) -> np.ndarray:
         centroid = []
         for selected in self.centroids:
-            centroid.append(getattr(detection, selected.value))
+            latent = getattr(detection, selected.value)
+            if self.preprocess == "normalize":
+                latent = self.normalize(latent, selected.value)
+            elif self.preprocess == "standardize":
+                latent = self.standardize(latent, selected.value)
+            centroid.append(latent)
         return np.concatenate(centroid)
+
+    def normalize(self, latent: np.ndarray, name: str) -> np.ndarray:
+        params = self.LATENT_PARAMS[self._id][name]
+        return (latent - params["min"]) / (params["max"] - params["min"])
+
+    def standardize(self, latent: np.ndarray, name: str) -> np.ndarray:
+        params = self.LATENT_PARAMS[self._id][name]
+        return (latent - params["mean"]) / params["std"]
 
 
 def save_results(objects: Iterable[Dict[int, Detection]], results_path: Path):
@@ -156,6 +273,11 @@ if __name__ == "__main__":
         help="Metric for cdist to calculate distance between centroids",
         default="cosine",
     )
+    parser.add_argument(
+        "--preprocess",
+        help="Latents preprocessing (normalize or standardize, defaults to none)",
+        default="",
+    )
 
     args = parser.parse_args()
     output_dir = args.output_dir / "MOT15-train"
@@ -167,13 +289,14 @@ if __name__ == "__main__":
                 max_lost=args.max_lost,
                 metric=args.metric,
                 centroids=[R[selected.upper()] for selected in args.representations],
+                preprocess=args.preprocess,
             )
             latents_path = data_dir / args.input_file
             with latents_path.open("rb") as fp:
                 latents = pickle.load(fp)
             tracker_name = (
-                f"SSDIR_{args.input_file.split('.')[0]}"
-                f"_{'-'.join(args.representations)}_{args.metric}"
+                f"SSDIR_{args.max_distance}_{args.max_lost}_{args.metric}"
+                f"_{args.preprocess}_{'-'.join(args.representations)}"
             )
             results_path = output_dir / tracker_name / "data" / f"{data_dir.name}.txt"
             save_results(tracker(latents.values()), results_path)

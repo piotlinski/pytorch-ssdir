@@ -53,6 +53,11 @@ if __name__ == "__main__":
     )
 
     with tqdm(list(sorted(args.data_dir.glob("*/")))) as pbar:
+        whats = []
+        wheres = []
+        depths = []
+        presents = []
+        centroids = []
         for data_dir in pbar:
             pbar.desc = data_dir.name
             output_path = data_dir / args.output_file
@@ -60,4 +65,51 @@ if __name__ == "__main__":
             with output_path.open("wb") as fp:
                 for frame_idx, image in enumerate(get_images(data_dir), start=1):
                     data[frame_idx] = list(detector(image))
+                    for detection in data[frame_idx]:
+                        whats.append(detection.what)
+                        wheres.append(detection.where)
+                        depths.append(detection.depth)
+                        presents.append(detection.present)
+                        centroids.append(detection.centroid)
                 pickle.dump(data, fp)
+        whats = np.array(whats)
+        wheres = np.array(wheres)
+        depths = np.array(depths)
+        presents = np.array(presents)
+        centroids = np.array(centroids)
+        print(
+            {
+                output_path.name: {
+                    "what": {
+                        "min": whats.min(),
+                        "max": whats.max(),
+                        "mean": whats.mean(),
+                        "std": whats.std(),
+                    },
+                    "where": {
+                        "min": wheres.min(),
+                        "max": wheres.max(),
+                        "mean": wheres.mean(),
+                        "std": wheres.std(),
+                    },
+                    "depth": {
+                        "min": depths.min(),
+                        "max": depths.max(),
+                        "mean": depths.mean(),
+                        "std": depths.std(),
+                    },
+                    "present": {
+                        "min": presents.min(),
+                        "max": presents.max(),
+                        "mean": presents.mean(),
+                        "std": presents.std(),
+                    },
+                    "centroid": {
+                        "min": centroids.min(),
+                        "max": centroids.max(),
+                        "mean": centroids.mean(),
+                        "std": centroids.std(),
+                    },
+                }
+            }
+        )

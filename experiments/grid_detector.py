@@ -31,16 +31,16 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--conf_range",
-        nargs=2,
+        nargs=3,
         type=int,
-        default=[5, 100],
+        default=[5, 100, 5],
         help="Range of confidence threshold values",
     )
     parser.add_argument(
         "--nms_range",
-        nargs=2,
+        nargs=3,
         type=int,
-        default=[5, 100],
+        default=[5, 100, 5],
         help="Range of NMS threshold values",
     )
     parser.add_argument(
@@ -56,12 +56,18 @@ if __name__ == "__main__":
         default=False,
         help="Perform evaluation instead of detecting.",
     )
+    parser.add_argument(
+        "--run_mot",
+        action="store_true",
+        default=False,
+        help="Run mot_challenge benchmark (in evaluate)",
+    )
 
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     if not args.evaluate:
-        conf_range = list(range(*args.conf_range, 5))
-        nms_range = list(range(*args.nms_range, 5))
+        conf_range = list(range(*args.conf_range))
+        nms_range = list(range(*args.nms_range))
         with tqdm(total=len(conf_range) * len(nms_range)) as top_pbar:
             for confidence_threshold in conf_range:
                 confidence_threshold /= 100
@@ -95,18 +101,19 @@ if __name__ == "__main__":
                             )
                     top_pbar.update()
     else:
-        subprocess.run(
-            [
-                "python",
-                "experiments/run_mot_challenge.py",
-                "--BENCHMARK=MOT15",
-                f"--TRACKERS_FOLDER={args.output_dir}",
-                "--GT_FOLDER=results/gt",
-                "--METRICS=HOTA",
-                "--USE_PARALLEL=True",
-                "--NUM_PARALLEL_CORES=40",
-            ]
-        )
+        if args.run_mot:
+            subprocess.run(
+                [
+                    "python",
+                    "experiments/run_mot_challenge.py",
+                    "--BENCHMARK=MOT15",
+                    f"--TRACKERS_FOLDER={args.output_dir}",
+                    "--GT_FOLDER=results/gt",
+                    "--METRICS=HOTA",
+                    "--USE_PARALLEL=True",
+                    "--NUM_PARALLEL_CORES=40",
+                ]
+            )
         results_path = Path(args.output_dir) / "MOT15-train"
         dfs = []
         for setting_path in results_path.glob("*/"):
