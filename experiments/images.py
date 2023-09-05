@@ -57,8 +57,8 @@ if __name__ == "__main__":
     ssdir.batch_size = 1
     data_loader = ssdir.val_dataloader()
     for idx, (image, *_) in enumerate(tqdm(data_loader), start=1):
-        if idx % 5 != 0:
-            continue
+        # if idx % 5 != 0:
+        #     continue
         name = f"{idx:04d}"
         images_dir = args.output_dir / name
         images_dir.mkdir(exist_ok=True, parents=True)

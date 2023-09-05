@@ -62,8 +62,9 @@ class Detection:
 
     @property
     def data(self) -> str:
-        x1, y1, x2, y2 = self.x1y1x2y2
-        return f"%d, %d, {x1}, {y1}, {x2}, {y2}, {self.confidence}, -1, -1, -1"
+        x1, y1, *_ = self.x1y1x2y2
+        *_, w, h = self.xywh
+        return f"%d, %d, {x1}, {y1}, {w}, {h}, {self.confidence}, -1, -1, -1"
 
 
 class Representer:
