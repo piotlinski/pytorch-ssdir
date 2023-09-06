@@ -1,0 +1,5 @@
+outs:
+- md5: 4e9d7a02d5a2d864c7ade471dc56eb84
+  size: 561852
+  hash: md5
+  path: reconstructions_clevr.png

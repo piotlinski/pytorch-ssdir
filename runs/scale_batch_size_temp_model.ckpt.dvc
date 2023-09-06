@@ -1,0 +1,5 @@
+outs:
+- md5: 48a2d4564ff3660cd99abf133bb00f4e
+  size: 140849640
+  hash: md5
+  path: scale_batch_size_temp_model.ckpt

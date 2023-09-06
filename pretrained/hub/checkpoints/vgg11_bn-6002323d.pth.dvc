@@ -1,0 +1,5 @@
+outs:
+- md5: 84469f51b1f816e99c440105172cddf4
+  size: 531503671
+  hash: md5
+  path: vgg11_bn-6002323d.pth

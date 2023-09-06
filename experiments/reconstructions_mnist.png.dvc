@@ -1,0 +1,5 @@
+outs:
+- md5: cbcb42b426e1b05e49fee716bf18f4a0
+  size: 558439
+  hash: md5
+  path: reconstructions_mnist.png

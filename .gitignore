@@ -221,12 +221,7 @@ dmypy.json
 data/*
 results/*
 
-# wandb runs directory
-runs/*
 wandb/*
-
-# pretrained dir
-pretrained/*
 
 # env file
 .env

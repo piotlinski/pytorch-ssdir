@@ -1,0 +1,5 @@
+outs:
+- md5: 39f428f724a1cddc9fdd7448844ac5c3
+  size: 112130871
+  hash: md5
+  path: ckpt-epoch=35-val_loss=1.51.ckpt

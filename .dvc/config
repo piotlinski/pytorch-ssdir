@@ -1,0 +1,6 @@
+[core]
+    remote = minio
+    autostage = true
+['remote "minio"']
+    url = s3://ssdir
+    endpointurl = http://truenas.lan:9000
